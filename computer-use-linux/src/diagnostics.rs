@@ -1887,7 +1887,7 @@ mod tests {
     #[test]
     fn parses_systemd_show_environment_output() {
         let environment = parse_line_environment(
-            b"DISPLAY=:0\nHYPRLAND_INSTANCE_SIGNATURE=abc\nNO_EQUALS\nYDOTOOL_SOCKET=/run/ydotoold/socket\n",
+            b"DISPLAY=:0\nHYPRLAND_INSTANCE_SIGNATURE=abc\nNIRI_SOCKET=/run/user/1000/niri.wayland-1.1168.sock\nNO_EQUALS\nYDOTOOL_SOCKET=/run/ydotoold/socket\n",
         );
 
         assert_eq!(environment.get("DISPLAY").map(String::as_str), Some(":0"));
@@ -1900,6 +1900,10 @@ mod tests {
         assert_eq!(
             environment.get("YDOTOOL_SOCKET").map(String::as_str),
             Some("/run/ydotoold/socket")
+        );
+        assert_eq!(
+            environment.get("NIRI_SOCKET").map(String::as_str),
+            Some("/run/user/1000/niri.wayland-1.1168.sock")
         );
         assert!(!environment.contains_key("NO_EQUALS"));
     }
