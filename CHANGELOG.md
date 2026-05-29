@@ -256,6 +256,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `codex-update-manager` now prunes unreferenced updater workspaces under `~/.cache/codex-update-manager/workspaces`, removing heavy build artifacts (`builder/`, `codex-app/`, `dist/`) while preserving lightweight diagnostics such as `logs/` and rebuild reports.
 - The Chrome native-messaging host now evicts stale browser clients when a newer Codex browser client connects, preventing old Node REPL sessions from repeatedly reattaching CDP and driving extension service-worker CPU.
 - The bundled Chrome plugin is now auto-installed during app startup, matching Browser Use, so the plugin page no longer falls back to an install button after restart when the Linux native host is already staged.
+- Linux Computer Use MCP registration no longer depends on the upstream per-account `computerUse` rollout. The in-app UI remains opt-in, but the bundled MCP plugin is installed on Linux by default as intended.
 - Nix builds, installer apps, and dev shells now use modern `7zz`, and the installer dependency check accepts `7zz` without requiring a separate legacy `7z` binary.
 - Codex Desktop no longer removes user-enabled `remote_control = true` from the local Linux config before starting the app server.
 - Linux webview bundles no longer ask current Codex CLI app servers to enable unsupported feature flags, avoiding connector authentication sync errors.

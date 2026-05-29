@@ -6791,6 +6791,7 @@ test("upgrades a rollout-gated Linux Computer Use descriptor", () => {
 
   assert.match(patched, /installWhenMissing:!0,name:tn/);
   assert.match(patched, /=>t===`linux`\|\|t===`darwin`&&e\.computerUse/);
+  assert.doesNotMatch(patched, /\(t===`darwin`\|\|t===`linux`\)&&e\.computerUse/);
   assert.equal((patched.match(/installWhenMissing:!0,name:tn/g) || []).length, 1);
 });
 
