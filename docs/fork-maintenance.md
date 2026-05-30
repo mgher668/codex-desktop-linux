@@ -22,7 +22,8 @@ add-niri-window-backend
 Start by fetching both remotes and making sure the worktree is clean:
 
 ```bash
-git fetch upstream origin
+git fetch upstream
+git fetch origin
 git switch add-niri-window-backend
 git status -sb
 ```
@@ -107,7 +108,8 @@ understand.
 Use this pattern instead:
 
 ```bash
-git fetch upstream origin
+git fetch upstream
+git fetch origin
 git rebase upstream/main
 git push --force-with-lease origin add-niri-window-backend
 ```
@@ -115,7 +117,8 @@ git push --force-with-lease origin add-niri-window-backend
 If you do not want to rewrite history, use a merge workflow instead:
 
 ```bash
-git fetch upstream origin
+git fetch upstream
+git fetch origin
 git switch add-niri-window-backend
 git merge upstream/main
 git push origin add-niri-window-backend
@@ -123,4 +126,3 @@ git push origin add-niri-window-backend
 
 The merge workflow avoids force-pushing, but it keeps merge commits in the
 maintenance branch history.
-
