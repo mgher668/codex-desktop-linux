@@ -195,7 +195,10 @@ pub async fn activate_window(window: &WindowInfo) -> Result<()> {
 }
 
 pub fn focused_window_override() -> Option<WindowInfo> {
-    cosmic::focused_window().ok().flatten()
+    niri::focused_window()
+        .ok()
+        .flatten()
+        .or_else(|| cosmic::focused_window().ok().flatten())
 }
 
 pub fn probe_backends() -> Vec<BackendProbe> {
