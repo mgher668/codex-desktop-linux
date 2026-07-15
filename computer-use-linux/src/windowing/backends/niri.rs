@@ -537,11 +537,12 @@ impl NiriWindow {
                 .capture?
                 .window_bounds(layout.position(&self), width, height)
         });
+        let app_id = clean_string(self.app_id);
         WindowInfo {
             window_id: self.id,
-            title: self.title,
-            app_id: self.app_id.clone(),
-            wm_class: self.app_id,
+            title: clean_string(self.title),
+            app_id: app_id.clone(),
+            wm_class: app_id,
             pid: self.pid.and_then(|pid| u32::try_from(pid).ok()),
             bounds,
             workspace: self
@@ -555,6 +556,12 @@ impl NiriWindow {
             terminal: None,
         }
     }
+}
+
+fn clean_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn positive_dimension(value: f64) -> Option<u32> {
@@ -619,6 +626,37 @@ mod tests {
             .into_iter()
             .map(|window| window.into_window_info(layout))
             .collect()
+    }
+
+    #[test]
+    fn normalizes_window_identity_without_losing_focus_or_geometry() {
+        let windows = parse_windows(
+            r#"[
+                {"id":1,"title":"  Editor  ","app_id":"  example.editor  ",
+                 "workspace_id":6,"is_focused":true,
+                 "layout":{"window_size":[800,600],"window_offset_in_tile":[3,5],
+                           "tile_pos_in_workspace_view":[10,20]}},
+                {"id":2,"title":" \t ","app_id":"  "},
+                {"id":3}
+            ]"#,
+            &live_layout(),
+        );
+
+        let editor = &windows[0];
+        assert_eq!(editor.title.as_deref(), Some("Editor"));
+        assert_eq!(editor.app_id.as_deref(), Some("example.editor"));
+        assert_eq!(editor.wm_class, editor.app_id);
+        assert!(editor.focused);
+        let bounds = editor.bounds.as_ref().unwrap();
+        assert_eq!(
+            (bounds.x, bounds.y, bounds.width, bounds.height),
+            (Some(26), Some(50), 1600, 1200)
+        );
+        for window in &windows[1..] {
+            assert_eq!(window.title, None);
+            assert_eq!(window.app_id, None);
+            assert_eq!(window.wm_class, None);
+        }
     }
 
     fn live_layout() -> NiriOutputLayout {
