@@ -93,6 +93,25 @@ pub async fn activate_window(window_id: u64) -> Result<()> {
         );
     }
 }
+pub fn focused_window() -> Result<Option<WindowInfo>> {
+    let output = niri_output(&["msg", "--json", "focused-window"])
+        .context("failed to run niri msg --json focused-window")?;
+    if !output.status.success() {
+        bail!(
+            "niri msg --json focused-window failed: {}",
+            command_failure_detail(&output)
+        );
+    }
+
+    let mut window: Option<WindowInfo> =
+        serde_json::from_slice::<Option<NiriWindow>>(&output.stdout)
+            .context("failed to parse niri focused-window JSON")?
+            .map(WindowInfo::from);
+    if let Some(window) = window.as_mut() {
+        window.backend = NIRI_BACKEND.to_string();
+    }
+    Ok(window)
+}
 
 pub(crate) fn niri_focus_args(window_id: u64) -> [String; 5] {
     [
@@ -216,28 +235,21 @@ struct NiriWindow {
 
 #[derive(Debug, Deserialize)]
 struct NiriWindowLayout {
-    window_size: Option<[i64; 2]>,
+    tile_size: Option<[f64; 2]>,
+    window_size: Option<[u32; 2]>,
+    tile_pos_in_workspace_view: Option<[f64; 2]>,
 }
 
 impl From<NiriWindow> for WindowInfo {
     fn from(window: NiriWindow) -> Self {
-        let bounds = window.layout.and_then(|layout| {
-            let [width, height] = layout.window_size?;
-            let width = u32::try_from(width).ok().filter(|value| *value > 0)?;
-            let height = u32::try_from(height).ok().filter(|value| *value > 0)?;
-            Some(WindowBounds {
-                x: None,
-                y: None,
-                width,
-                height,
-            })
-        });
+        let bounds = window.layout.as_ref().and_then(niri_window_bounds);
+        let app_id = clean_string(window.app_id);
 
         Self {
             window_id: window.id,
-            title: window.title,
-            app_id: window.app_id.clone(),
-            wm_class: window.app_id,
+            title: clean_string(window.title),
+            app_id: app_id.clone(),
+            wm_class: app_id,
             pid: window.pid.and_then(|pid| u32::try_from(pid).ok()),
             bounds,
             workspace: window
@@ -250,6 +262,33 @@ impl From<NiriWindow> for WindowInfo {
             terminal: None,
         }
     }
+}
+
+fn niri_window_bounds(layout: &NiriWindowLayout) -> Option<WindowBounds> {
+    let [width, height] = layout.window_size.or_else(|| {
+        layout
+            .tile_size
+            .map(|[width, height]| [width as u32, height as u32])
+    })?;
+    let width = width.try_into().ok().filter(|v: &u32| *v > 0)?;
+    let height = height.try_into().ok().filter(|v: &u32| *v > 0)?;
+    let [x, y] = layout
+        .tile_pos_in_workspace_view
+        .map(|[x, y]| [Some(x.round() as i32), Some(y.round() as i32)])
+        .unwrap_or([None, None]);
+
+    Some(WindowBounds {
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
+fn clean_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]
@@ -297,5 +336,77 @@ mod tests {
             selected.path,
             PathBuf::from("/run/user/1000/niri.wayland-2.200.sock")
         );
+    }
+
+    #[test]
+    fn parses_niri_window_json() {
+        let windows = parse_niri_windows(
+            r#"[
+                {
+                    "id": 14,
+                    "title": "Codex",
+                    "app_id": "codex-desktop",
+                    "pid": 16589,
+                    "workspace_id": 3,
+                    "is_focused": false,
+                    "is_floating": false,
+                    "layout": {
+                        "pos_in_scrolling_layout": [3, 1],
+                        "tile_size": [1888.0, 994.0],
+                        "window_size": [1888, 994],
+                        "tile_pos_in_workspace_view": null
+                    }
+                },
+                {
+                    "id": 2,
+                    "title": "tns /m/m/M/g/codex-desktop-linux",
+                    "app_id": "Alacritty",
+                    "pid": 1877,
+                    "workspace_id": 3,
+                    "is_focused": true,
+                    "is_floating": false,
+                    "layout": {
+                        "pos_in_scrolling_layout": [2, 1],
+                        "tile_size": [1888.0, 994.0],
+                        "window_size": [1888, 994],
+                        "tile_pos_in_workspace_view": null
+                    }
+                }
+            ]"#,
+        )
+        .unwrap();
+
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].window_id, 2);
+        assert_eq!(windows[0].app_id.as_deref(), Some("Alacritty"));
+        assert_eq!(windows[0].pid, Some(1877));
+        assert_eq!(windows[0].workspace, Some(3));
+        assert!(windows[0].focused);
+        assert_eq!(windows[0].bounds.as_ref().unwrap().width, 1888);
+        assert_eq!(windows[0].bounds.as_ref().unwrap().x, None);
+        assert_eq!(windows[0].client_type, None);
+        assert_eq!(windows[0].backend, NIRI_BACKEND);
+    }
+
+    #[test]
+    fn parses_niri_workspace_view_position() {
+        let windows = parse_niri_windows(
+            r#"[
+                {
+                    "id": 3,
+                    "title": "Dialog",
+                    "app_id": "example",
+                    "layout": {
+                        "tile_size": [500.0, 400.0],
+                        "tile_pos_in_workspace_view": [12.5, 20.2]
+                    }
+                }
+            ]"#,
+        )
+        .unwrap();
+
+        assert_eq!(windows[0].bounds.as_ref().unwrap().x, Some(13));
+        assert_eq!(windows[0].bounds.as_ref().unwrap().y, Some(20));
+        assert_eq!(windows[0].client_type, None);
     }
 }
