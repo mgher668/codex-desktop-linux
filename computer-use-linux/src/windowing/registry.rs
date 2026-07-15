@@ -273,6 +273,9 @@ pub async fn resize_window(window: &WindowInfo, width: i32, height: i32) -> Resu
 }
 
 pub async fn focused_window_override() -> Option<WindowInfo> {
+    if let Some(window) = niri::focused_window().ok().flatten() {
+        return Some(window);
+    }
     cosmic::focused_window().await.ok().flatten()
 }
 
