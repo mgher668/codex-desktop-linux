@@ -264,6 +264,28 @@ test("Codex Micro gate drift cannot redirect the patch to an unrelated exported 
   assert.equal(applyCodexMicroFeatureGatePatch(drifted), drifted);
 });
 
+test("Codex Micro hook matching rejects identifier suffix collisions", () => {
+  const drifted = [
+    "const warning=`useFeatureGate hook failed to find a valid StatsigClient`;",
+    "function Rh(e){return changedGateShape(e)}",
+    "function h(e){return touch(),read(atom,e)}",
+    `const microGate=Rh(\`${CODEX_MICRO_GATE_ID}\`);`,
+    `const microRoute=\`${CODEX_MICRO_ROUTE}\`;`,
+    "export{Rh as gate,h as unrelated};",
+  ].join("");
+
+  assert.equal(exportedFeatureGateHook(drifted)?.hookName, "h");
+  assert.equal(matchesCodexMicroFeatureGateContract(drifted), false);
+  assert.equal(applyCodexMicroFeatureGatePatch(drifted), drifted);
+});
+
+test("Codex Micro route matching requires the exact current route literal", () => {
+  const drifted = currentFeatureGateFixture()
+    .replace(CODEX_MICRO_ROUTE, `${CODEX_MICRO_ROUTE}-v2`);
+  assert.equal(matchesCodexMicroFeatureGateContract(drifted), false);
+  assert.equal(applyCodexMicroFeatureGatePatch(drifted), drifted);
+});
+
 test("Codex Micro gate patch targets only the current app-initial bundle shape", () => {
   const descriptor = descriptors.find(({ id }) => id === "webview-feature-gate");
   assert.ok(descriptor);

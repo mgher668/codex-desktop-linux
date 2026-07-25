@@ -52,10 +52,14 @@ function exportedFeatureGateHook(source) {
 }
 
 function hasCodexMicroCallsite(source, hookName) {
-  return typeof source === "string"
-    && typeof hookName === "string"
-    && source.includes(`${hookName}(\`${CODEX_MICRO_GATE_ID}\`)`)
-    && source.includes(CODEX_MICRO_ROUTE);
+  if (typeof source !== "string" || typeof hookName !== "string") {
+    return false;
+  }
+  const gateCall = new RegExp(
+    `(?:^|[^A-Za-z0-9_$.])${escapeRegExp(hookName)}\\(\`${CODEX_MICRO_GATE_ID}\`\\)`,
+  );
+  return gateCall.test(source)
+    && source.includes(`\`${CODEX_MICRO_ROUTE}\``);
 }
 
 function matchesCodexMicroFeatureGateContract(source) {
