@@ -38,7 +38,11 @@ pub(crate) fn classify_help(help: &str) -> Option<CliGeneration> {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>();
-    if commands.contains(&"debug") && commands.contains(&"stdin") {
+    let required_raw_commands = ["click", "mousemove", "type", "key", "debug"];
+    if required_raw_commands
+        .iter()
+        .all(|command| commands.contains(command))
+    {
         Some(CliGeneration::RawEvents)
     } else if commands.contains(&"recorder") {
         Some(CliGeneration::LegacyNamed)
@@ -76,6 +80,13 @@ mod tests {
     #[test]
     fn classifies_raw_event_cli_from_current_ydotool() {
         let help = "Usage: ydotool <cmd> <args>\nAvailable commands:\n  click\n  mousemove\n  type\n  key\n  debug\n  stdin\n";
+
+        assert_eq!(classify_help(help), Some(CliGeneration::RawEvents));
+    }
+
+    #[test]
+    fn classifies_arch_1_0_4_cli_as_raw_events() {
+        let help = "Usage: ydotool <cmd> <args>\nAvailable commands:\n  click\n  mousemove\n  type\n  key\n  debug\n  bakers\n";
 
         assert_eq!(classify_help(help), Some(CliGeneration::RawEvents));
     }
