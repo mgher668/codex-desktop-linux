@@ -51,9 +51,10 @@ function exportedFeatureGateHook(source) {
   return exportedCandidates.length === 1 ? exportedCandidates[0] : null;
 }
 
-function hasCodexMicroCallsite(source) {
+function hasCodexMicroCallsite(source, hookName) {
   return typeof source === "string"
-    && source.includes(CODEX_MICRO_GATE_ID)
+    && typeof hookName === "string"
+    && source.includes(`${hookName}(\`${CODEX_MICRO_GATE_ID}\`)`)
     && source.includes(CODEX_MICRO_ROUTE);
 }
 
@@ -64,16 +65,14 @@ function matchesCodexMicroFeatureGateContract(source) {
   if (source.includes(CODEX_MICRO_GATE_MARKER)) {
     return true;
   }
-  return hasCodexMicroCallsite(source)
-    && source.includes(FEATURE_GATE_WARNING)
-    && exportedFeatureGateHook(source) != null;
+  const hook = exportedFeatureGateHook(source);
+  return source.includes(FEATURE_GATE_WARNING)
+    && hook != null
+    && hasCodexMicroCallsite(source, hook.hookName);
 }
 
 function applyCodexMicroFeatureGatePatch(source) {
   if (typeof source !== "string" || source.includes(CODEX_MICRO_GATE_MARKER)) {
-    return source;
-  }
-  if (!hasCodexMicroCallsite(source)) {
     return source;
   }
 
@@ -85,6 +84,9 @@ function applyCodexMicroFeatureGatePatch(source) {
           "skipping Codex Micro gate override",
       );
     }
+    return source;
+  }
+  if (!hasCodexMicroCallsite(source, hook.hookName)) {
     return source;
   }
 

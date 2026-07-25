@@ -202,7 +202,7 @@ function currentFeatureGateFixture() {
     "const warning=`useFeatureGate hook failed to find a valid StatsigClient`;",
     "function Lh(){return zh().isLoading}",
     "function Rh(e){return bnt(),Bo(Fh,e)}",
-    `const microGate=kh(\`${CODEX_MICRO_GATE_ID}\`);`,
+    `const microGate=Rh(\`${CODEX_MICRO_GATE_ID}\`);`,
     `const microRoute=\`${CODEX_MICRO_ROUTE}\`;`,
     "export{zh as c,Lh as flt,Rh as rlt};",
   ].join("");
@@ -247,6 +247,21 @@ test("both the Codex Micro gate id and route are required", () => {
   const withoutRoute = currentFeatureGateFixture().replace(CODEX_MICRO_ROUTE, "/settings/other");
   assert.equal(matchesCodexMicroFeatureGateContract(withoutGate), false);
   assert.equal(matchesCodexMicroFeatureGateContract(withoutRoute), false);
+});
+
+test("Codex Micro gate drift cannot redirect the patch to an unrelated exported hook", () => {
+  const drifted = [
+    "const warning=`useFeatureGate hook failed to find a valid StatsigClient`;",
+    "function Ah(e){return changedGateShape(e)}",
+    "function Uh(e){return touch(),read(atom,e)}",
+    `const microGate=Ah(\`${CODEX_MICRO_GATE_ID}\`);`,
+    `const microRoute=\`${CODEX_MICRO_ROUTE}\`;`,
+    "export{Ah as gate,Uh as unrelated};",
+  ].join("");
+
+  assert.equal(exportedFeatureGateHook(drifted)?.hookName, "Uh");
+  assert.equal(matchesCodexMicroFeatureGateContract(drifted), false);
+  assert.equal(applyCodexMicroFeatureGatePatch(drifted), drifted);
 });
 
 test("Codex Micro gate patch targets only the current app-initial bundle shape", () => {
@@ -327,6 +342,31 @@ test("an already verified binding is idempotent and performs no package fetch", 
   assert.equal(result.changed, false);
   assert.equal(result.alreadyApplied, true);
   assert.equal(result.source, "existing-prebuild");
+});
+
+test("an unexpected upstream binding fails closed before package materialization", async (t) => {
+  const expectedBinary = makeElf("x64", "expected-binding");
+  const unexpectedBinary = makeElf("x64", "unexpected-upstream-binding");
+  const artifact = fixtureArtifact({ x64: expectedBinary });
+  const fixture = createBundledFixture(t);
+  const targetPath = path.join(fixture.nodeHidDir, bindingRelativePath("x64"));
+  writeFile(targetPath, unexpectedBinary, 0o755);
+  let materializeCalls = 0;
+
+  await assert.rejects(
+    stageCodexMicroNativeBinding({
+      extractedDir: fixture.extractedDir,
+      arch: "x64",
+      artifactManifest: artifact,
+      materializePackage: async () => {
+        materializeCalls += 1;
+        throw new Error("unexpected upstream bindings must fail before materialization");
+      },
+    }),
+    /existing node-hid native binding hash mismatch/i,
+  );
+  assert.equal(materializeCalls, 0);
+  assert.deepEqual(fs.readFileSync(targetPath), unexpectedBinary);
 });
 
 test("upstream node-hid version or loader drift fails before package materialization", async (t) => {

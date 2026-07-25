@@ -52,8 +52,10 @@ sudo pacman -S systemd-libs libusb
 ## Device access
 
 Feature-enabled Debian, RPM, and pacman packages install
-`/usr/lib/udev/rules.d/70-codex-micro.rules`. Reload the rules after the first
-install, then reconnect USB or Bluetooth:
+`/usr/lib/udev/rules.d/70-codex-micro.rules`. Native package scripts do not
+reload the system udev daemon. Reload after the first install and after a
+package rebuild that enables or disables the feature, then reconnect USB or
+Bluetooth:
 
 ```bash
 sudo udevadm control --reload-rules
@@ -116,6 +118,10 @@ same vendor HID channel on the Bluetooth HID bus. Both rules use `uaccess` and
 
 NixOS installs the rule automatically when the feature is selected through the
 module. Other install modes require the matching manual procedure above.
+When disabling a manually installed copy, remove
+`/etc/udev/rules.d/70-codex-micro.rules`, reload the rules, and reconnect the
+device. Removing or disabling a native package build removes its packaged copy,
+but still requires the same reload and reconnect.
 
 ## Bluetooth
 

@@ -443,17 +443,22 @@ async function stageCodexMicroNativeBinding(options) {
       throw new Error(`Existing node-hid native binding is unsafe: ${targetPath}`);
     }
     const existing = fs.readFileSync(targetPath);
-    if (digest(existing, "sha256", "hex") === prebuild.sha256) {
-      validateBinding(existing, arch, prebuild.sha256);
-      return {
-        changed: false,
-        alreadyApplied: true,
-        version: artifactManifest.version,
-        targetPath,
-        source: "existing-prebuild",
-        integrity: artifactManifest.integrity,
-      };
+    const existingSha256 = digest(existing, "sha256", "hex");
+    if (existingSha256 !== prebuild.sha256) {
+      throw new Error(
+        `Existing node-hid native binding hash mismatch: expected ${prebuild.sha256}, ` +
+        `got ${existingSha256}`,
+      );
     }
+    validateBinding(existing, arch, prebuild.sha256);
+    return {
+      changed: false,
+      alreadyApplied: true,
+      version: artifactManifest.version,
+      targetPath,
+      source: "existing-prebuild",
+      integrity: artifactManifest.integrity,
+    };
   }
 
   let materialized;
