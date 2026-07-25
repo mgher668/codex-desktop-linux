@@ -52,6 +52,7 @@ function discoverBundledNodeHid(extractedDir) {
     "@worklouder",
     "device-kit-oai",
   );
+  assertNoSymbolicLinkAncestors(extractedRoot, deviceKitDir);
   requirePackageDirectory(deviceKitDir, "@worklouder/device-kit-oai", "Work Louder device-kit-oai");
 
   const workLouderKitDir = path.join(
@@ -60,6 +61,7 @@ function discoverBundledNodeHid(extractedDir) {
     "@worklouder",
     "wl-device-kit",
   );
+  assertNoSymbolicLinkAncestors(extractedRoot, workLouderKitDir);
   requirePackageDirectory(
     workLouderKitDir,
     "@worklouder/wl-device-kit",

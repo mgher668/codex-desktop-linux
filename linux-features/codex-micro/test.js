@@ -547,21 +547,43 @@ test("the nested discovery path cannot be substituted with a hoisted node-hid", 
   );
 });
 
-test("discovery rejects symlinked ancestors in the bundled dependency chain", (t) => {
-  const fixture = createBundledFixture(t);
-  const scopedModules = path.join(
-    fixture.extractedDir,
-    "node_modules",
-    "@worklouder",
-  );
-  const outside = path.join(path.dirname(fixture.extractedDir), "outside-worklouder");
-  fs.renameSync(scopedModules, outside);
-  fs.symlinkSync(outside, scopedModules, "dir");
+test("discovery rejects symlinked ancestors before reading package metadata", (t) => {
+  for (const scenario of [
+    {
+      label: "device-kit-oai",
+      scopedModules: (fixture) => path.join(
+        fixture.extractedDir,
+        "node_modules",
+        "@worklouder",
+      ),
+      packageName: "device-kit-oai",
+    },
+    {
+      label: "wl-device-kit",
+      scopedModules: (fixture) => path.join(
+        fixture.extractedDir,
+        DEVICE_KIT_RELATIVE,
+        "node_modules",
+        "@worklouder",
+      ),
+      packageName: "wl-device-kit",
+    },
+  ]) {
+    const fixture = createBundledFixture(t);
+    const scopedModules = scenario.scopedModules(fixture);
+    const outside = path.join(
+      path.dirname(fixture.extractedDir),
+      `outside-${scenario.label}`,
+    );
+    fs.renameSync(scopedModules, outside);
+    writeFile(path.join(outside, scenario.packageName, "package.json"), "{");
+    fs.symlinkSync(outside, scopedModules, "dir");
 
-  assert.throws(
-    () => discoverBundledNodeHid(fixture.extractedDir),
-    /path must not contain symlinks/i,
-  );
+    assert.throws(
+      () => discoverBundledNodeHid(fixture.extractedDir),
+      /path must not contain symlinks/i,
+    );
+  }
 });
 
 test("native binding staging rejects valid existing bindings behind symlinked parents", async (t) => {
