@@ -586,6 +586,27 @@ test("discovery rejects symlinked ancestors before reading package metadata", (t
   }
 });
 
+test("discovery rejects symlinked package ancestors before reading metadata", (t) => {
+  const fixture = createBundledFixture(t);
+  const scopedModules = path.join(
+    fixture.extractedDir,
+    "node_modules",
+    "@worklouder",
+  );
+  const outside = path.join(path.dirname(fixture.extractedDir), "outside-worklouder");
+  fs.renameSync(scopedModules, outside);
+  fs.writeFileSync(
+    path.join(outside, "device-kit-oai", "package.json"),
+    "{ metadata outside the extracted tree must not be read",
+  );
+  fs.symlinkSync(outside, scopedModules, "dir");
+
+  assert.throws(
+    () => discoverBundledNodeHid(fixture.extractedDir),
+    /path must not contain symlinks/i,
+  );
+});
+
 test("native binding staging rejects valid existing bindings behind symlinked parents", async (t) => {
   const binary = makeElf("x64", "symlinked-target-parent");
   const artifact = fixtureArtifact({ x64: binary });

@@ -59,12 +59,52 @@ install, then reconnect USB or Bluetooth:
 sudo udevadm control --reload-rules
 ```
 
-AppImage, source, Home Manager, and direct flake installs cannot change host
-udev policy. Install the tracked rule once:
+AppImage, source, user-local, Home Manager, and direct flake installs cannot
+change host udev policy. Install the copy staged for your install mode once.
+
+For a source build:
 
 ```bash
 sudo install -Dm0644 \
-  linux-features/codex-micro/resources/70-codex-micro.rules \
+  codex-app/.codex-linux/features/codex-micro/70-codex-micro.rules \
+  /etc/udev/rules.d/70-codex-micro.rules
+sudo udevadm control --reload-rules
+```
+
+For a user-local install, use the installed app copy:
+
+```bash
+sudo install -Dm0644 \
+  "$HOME/.local/opt/codex-desktop-linux/codex-app/.codex-linux/features/codex-micro/70-codex-micro.rules" \
+  /etc/udev/rules.d/70-codex-micro.rules
+sudo udevadm control --reload-rules
+```
+
+For an AppImage, extract its staged copy first:
+
+```bash
+codex_appimage="$(readlink -f ./codex-desktop-*.AppImage)"
+codex_extract_dir="$(mktemp -d)"
+trap 'rm -rf "$codex_extract_dir"' EXIT
+(
+  cd "$codex_extract_dir"
+  "$codex_appimage" --appimage-extract >/dev/null
+)
+sudo install -Dm0644 \
+  "$codex_extract_dir/squashfs-root/opt/codex-desktop/.codex-linux/features/codex-micro/70-codex-micro.rules" \
+  /etc/udev/rules.d/70-codex-micro.rules
+sudo udevadm control --reload-rules
+```
+
+For Home Manager or a direct flake package, resolve the selected Nix store
+output from the installed launcher:
+
+```bash
+codex_package_root="$(
+  dirname "$(dirname "$(readlink -f "$(command -v codex-desktop)")")"
+)"
+sudo install -Dm0644 \
+  "$codex_package_root/lib/udev/rules.d/70-codex-micro.rules" \
   /etc/udev/rules.d/70-codex-micro.rules
 sudo udevadm control --reload-rules
 ```
@@ -75,8 +115,7 @@ same vendor HID channel on the Bluetooth HID bus. Both rules use `uaccess` and
 `0660`; they do not make hidraw devices world-writable.
 
 NixOS installs the rule automatically when the feature is selected through the
-module. Home Manager and direct flake users must use the manual rule procedure
-above.
+module. Other install modes require the matching manual procedure above.
 
 ## Bluetooth
 
