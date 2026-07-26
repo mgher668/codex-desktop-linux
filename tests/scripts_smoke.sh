@@ -10723,6 +10723,112 @@ test_launcher_warm_start_recovery() {
         bash "$REPO_DIR/tests/launcher_warm_start_recovery.sh"
 }
 
+test_launcher_window_reopen_behavior() {
+    local nominal_log="$TMP_DIR/launcher-window-reopen-nominal.log"
+    local mutation_log="$TMP_DIR/launcher-window-reopen-mutation.log"
+    local mutation_control_log="$TMP_DIR/launcher-window-reopen-mutation-control.log"
+    local no_pidfd_log="$TMP_DIR/launcher-window-reopen-no-pidfd.log"
+    local no_pidfd_tmp="$TMP_DIR/launcher-window-reopen-no-pidfd-missing"
+    local probe_failure_bin="$TMP_DIR/launcher-window-reopen-probe-failure-bin"
+    local probe_failure_log="$TMP_DIR/launcher-window-reopen-probe-failure.log"
+    local status
+
+    info "Checking healthy resident reopen handoff behavior"
+    set +e
+    bash "$REPO_DIR/tests/launcher_window_reopen_behavior.sh" \
+        > "$nominal_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -eq 77 ]; then
+        if ! grep -Fxq \
+            'launcher window-reopen behavior test skipped: pidfd cleanup unavailable' \
+            "$nominal_log" \
+            || ! grep -Fq '"reason":"pidfd-cleanup-unavailable"' "$nominal_log"; then
+            cat "$nominal_log" >&2
+            fail "Window-reopen behavior harness returned an invalid pidfd skip result"
+        fi
+        cat "$nominal_log"
+        return 0
+    fi
+    if [ "$status" -ne 0 ] \
+        || ! grep -Fxq 'launcher window-reopen behavior test passed' "$nominal_log" \
+        || ! grep -Fq '"outcome":"preserved"' "$nominal_log"; then
+        cat "$nominal_log" >&2
+        fail "Window-reopen behavior harness nominal run failed (status $status)"
+    fi
+    cat "$nominal_log"
+
+    set +e
+    CODEX_TEST_FORCE_RESIDENT_REPLACEMENT=1 \
+        bash "$REPO_DIR/tests/launcher_window_reopen_behavior.sh" \
+        > "$mutation_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 86 ] \
+        || ! grep -Fxq \
+            'launcher window-reopen behavior mutation detected: healthy resident replacement' \
+            "$mutation_log" \
+        || ! grep -Fq '"outcome":"resident-replacement-detected"' "$mutation_log"; then
+        cat "$mutation_log" >&2
+        fail "Window-reopen behavior harness did not report the expected resident-replacement regression (status $status)"
+    fi
+
+    set +e
+    CODEX_TEST_FORCE_RESIDENT_REPLACEMENT=1 \
+        CODEX_TEST_MUTATION_CONTROL_ONLY=1 \
+        bash "$REPO_DIR/tests/launcher_window_reopen_behavior.sh" \
+        > "$mutation_control_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ] \
+        || ! grep -Fxq \
+            'launcher window-reopen behavior mutation control passed' \
+            "$mutation_control_log" \
+        || ! grep -Fq '"outcome":"mutation-control-preserved"' "$mutation_control_log" \
+        || grep -Fq 'resident-replacement-detected' "$mutation_control_log"; then
+        cat "$mutation_control_log" >&2
+        fail "Window-reopen behavior harness mutation control failed (status $status)"
+    fi
+
+    rm -rf "$no_pidfd_tmp"
+    set +e
+    CODEX_TEST_FORCE_NO_PIDFD=1 TMPDIR="$no_pidfd_tmp" \
+        bash "$REPO_DIR/tests/launcher_window_reopen_behavior.sh" \
+        > "$no_pidfd_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 77 ] \
+        || ! grep -Fxq \
+            'launcher window-reopen behavior test skipped: pidfd cleanup unavailable' \
+            "$no_pidfd_log" \
+        || ! grep -Fq '"reason":"pidfd-cleanup-unavailable"' "$no_pidfd_log"; then
+        cat "$no_pidfd_log" >&2
+        fail "Window-reopen behavior harness did not report the expected safe no-pidfd skip (status $status)"
+    fi
+    [ ! -e "$no_pidfd_tmp" ] \
+        || fail "Window-reopen behavior harness created a workspace before the pidfd capability gate"
+
+    mkdir -p "$probe_failure_bin"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 9' > "$probe_failure_bin/python3"
+    chmod +x "$probe_failure_bin/python3"
+    set +e
+    PATH="$probe_failure_bin:$PATH" TMPDIR="$no_pidfd_tmp" \
+        bash "$REPO_DIR/tests/launcher_window_reopen_behavior.sh" \
+        > "$probe_failure_log" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -ne 1 ] \
+        || ! grep -Fxq \
+            'launcher window-reopen behavior test failed: pidfd capability probe failed' \
+            "$probe_failure_log" \
+        || grep -Fq 'pidfd-cleanup-unavailable' "$probe_failure_log"; then
+        cat "$probe_failure_log" >&2
+        fail "Window-reopen behavior harness misclassified a pidfd probe setup failure (status $status)"
+    fi
+    [ ! -e "$no_pidfd_tmp" ] \
+        || fail "Window-reopen behavior harness created a workspace after a pidfd probe failure"
+}
+
 test_notification_actions_bridge_accepts_prebuilt_binary() {
     local workspace="$TMP_DIR/notification-actions-bridge"
     local source_binary="$workspace/prebuilt/codex-notification-actions-linux"
@@ -10871,6 +10977,7 @@ main() {
     test_launcher_marketplace_metadata_atomic_staging
     test_launcher_template_sanity
     test_launcher_warm_start_recovery
+    test_launcher_window_reopen_behavior
     test_launcher_cli_resolution_policy
     test_webview_server_cache_policy
     test_process_detection_helper_cmdline_shapes
