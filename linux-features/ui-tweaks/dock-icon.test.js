@@ -271,9 +271,13 @@ test("settings drift remains byte-identical", () => {
 
 test("settings duplicate and mixed contracts remain byte-identical", () => {
   const patched = applyDockIconSettingsPatch(currentSettingsSource);
+  const drifted = currentSettingsSource.replace("yt.Agent===`prod`", "yt.Agent!==`prod`");
   for (const source of [
     currentSettingsSource + currentSettingsSource,
     currentSettingsSource + patched,
+    currentSettingsSource + drifted,
+    patched + drifted,
+    patched + patched,
   ]) {
     const { value, warnings } = captureWarns(() => applyDockIconSettingsPatch(source));
     assert.equal(value, source);

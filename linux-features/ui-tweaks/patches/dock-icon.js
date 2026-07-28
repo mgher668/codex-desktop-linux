@@ -105,6 +105,7 @@ const currentSettingsGatePattern =
   /if\(([A-Za-z_$][\w$]*)!==`macOS`\|\|([A-Za-z_$][\w$]*)\.ChatGPT!==`chatgpt`\|\|([A-Za-z_$][\w$]*)\.Agent===`prod`\)return null/g;
 const patchedSettingsGatePattern =
   /if\(([A-Za-z_$][\w$]*)!==`macOS`&&\1!==`linux`\|\|([A-Za-z_$][\w$]*)\.ChatGPT!==`chatgpt`\|\|([A-Za-z_$][\w$]*)\.Agent===`prod`\)return null/g;
+const settingsRowAnchorPattern = /\.dockIconPreviews\b/g;
 
 function settingsGateMatches(source, pattern) {
   pattern.lastIndex = 0;
@@ -112,12 +113,24 @@ function settingsGateMatches(source, pattern) {
 }
 
 function dockIconSettingsContract(source) {
+  if (typeof source !== "string") {
+    return "drifted";
+  }
   const currentMatches = settingsGateMatches(source, currentSettingsGatePattern);
   const patchedMatches = settingsGateMatches(source, patchedSettingsGatePattern);
-  if (currentMatches.length === 1 && patchedMatches.length === 0) {
+  const rowAnchors = settingsGateMatches(source, settingsRowAnchorPattern);
+  if (
+    rowAnchors.length === 1 &&
+    currentMatches.length === 1 &&
+    patchedMatches.length === 0
+  ) {
     return "current";
   }
-  if (currentMatches.length === 0 && patchedMatches.length === 1) {
+  if (
+    rowAnchors.length === 1 &&
+    currentMatches.length === 0 &&
+    patchedMatches.length === 1
+  ) {
     return "patched";
   }
   return "drifted";
