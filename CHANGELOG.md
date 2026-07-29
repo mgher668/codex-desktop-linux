@@ -35,6 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- Remote mobile control now patches the current 26.721 dual-gate enablement
+  bridge instead of reporting it as already applied. Startup auto-connects the
+  environment owned by this Desktop without overwriting saved choices for
+  other enrolled hosts.
 - Updater-managed npm Codex CLI installs now serialize across daemon, launcher,
   and status processes. If npm reports the exact stale Arborist retirement
   directory failure, automatic paths preserve the working CLI and direct the
