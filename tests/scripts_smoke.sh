@@ -8834,6 +8834,70 @@ test_linux_file_manager_patch_smoke() {
     assert_not_contains "$output_log" 'Failed to apply Linux File Manager Patch'
 }
 
+test_linux_titlebar_context_menu_patch_smoke() {
+    info "Checking managed-window Linux titlebar context-menu patch behavior"
+    local workspace="$TMP_DIR/titlebar-context-menu-patch"
+    local extracted="$workspace/extracted"
+    local first_report="$workspace/first-report.json"
+    local second_report="$workspace/second-report.json"
+    local output_log="$workspace/output.log"
+    local first_hash
+    local second_hash
+    local bundle_body
+
+    mkdir -p "$workspace"
+    bundle_body='const electron=require(`electron`);class WindowManager{registerWindow(){}async createWindow(e={}){let{appearance:o=`primary`}=e,N=new electron.BrowserWindow({});(process.platform===`win32`||process.platform===`linux`)&&N.removeMenu(),this.registerWindow(N,0,!0,o,`register`);host.on(`did-create-window`,()=>{let e=new electron.BrowserWindow({});process.platform===`win32`&&e.removeMenu(),e.show()});return N}}'
+    make_fake_extracted_asar "$extracted" "$bundle_body"
+
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" \
+        --report-json "$first_report" \
+        "$extracted" >"$output_log" 2>&1
+    assert_occurrence_count \
+        "$extracted/.vite/build/main-test.js" \
+        'system-context-menu' \
+        '2'
+    assert_contains \
+        "$extracted/.vite/build/main-test.js" \
+        'process.platform===`linux`&&(N.on(`system-context-menu`,e=>e.preventDefault()),N.removeMenu()),process.platform===`win32`&&N.removeMenu(),'
+    assert_contains \
+        "$extracted/.vite/build/main-test.js" \
+        'process.platform===`linux`&&(e.on(`system-context-menu`,e=>e.preventDefault()),e.removeMenu()),process.platform===`win32`&&e.removeMenu(),'
+    node - "$first_report" <<'NODE'
+const fs = require("node:fs");
+const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const entry = report.patches.find(
+  (patch) => patch.name === "linux-managed-window-system-context-menu",
+);
+if (entry?.status !== "applied") {
+  throw new Error(`Expected managed-window patch to be applied, got ${entry?.status}`);
+}
+if (
+  JSON.stringify(entry.strategies) !==
+  JSON.stringify([{ group: "linux-managed-window-menu", strategy: "upstream-combined" }])
+) {
+  throw new Error(`Unexpected managed-window strategy: ${JSON.stringify(entry?.strategies)}`);
+}
+NODE
+
+    first_hash="$(sha256sum "$extracted/.vite/build/main-test.js" | awk '{print $1}')"
+    node "$REPO_DIR/scripts/patch-linux-window-ui.js" \
+        --report-json "$second_report" \
+        "$extracted" >"$output_log" 2>&1
+    second_hash="$(sha256sum "$extracted/.vite/build/main-test.js" | awk '{print $1}')"
+    [ "$second_hash" = "$first_hash" ] \
+        || fail "Expected second titlebar context-menu patch pass to preserve the main bundle hash"
+    node - "$second_report" <<'NODE'
+const fs = require("node:fs");
+const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const entry = report.patches.find(
+  (patch) => patch.name === "linux-managed-window-system-context-menu",
+);
+if (entry?.status !== "already-applied") {
+  throw new Error(`Expected managed-window patch to be idempotent, got ${entry?.status}`);
+}
+NODE
+}
+
 test_linux_translucent_sidebar_default_patch_smoke() {
     info "Checking Linux translucent sidebar default patch behavior"
     local workspace="$TMP_DIR/translucent-sidebar-patch"
@@ -10993,6 +11057,7 @@ main() {
     test_webview_probe_equivalence
     test_side_by_side_launcher_identity
     test_linux_file_manager_patch_smoke
+    test_linux_titlebar_context_menu_patch_smoke
     test_linux_translucent_sidebar_default_patch_smoke
     test_keybinds_settings_tab_patch_smoke
     test_keybinds_settings_patch_warns_on_bundle_shape_miss

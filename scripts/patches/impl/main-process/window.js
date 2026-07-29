@@ -4,6 +4,9 @@ const {
   escapeRegExp,
   findMatchingBrace,
 } = require("../../lib/minified-js.js");
+const {
+  recordStrategy,
+} = require("../../strategy-telemetry.js");
 
 const LINUX_TITLEBAR_OVERLAY_HEIGHT = 30;
 const LINUX_TITLEBAR_OVERLAY_HELPER = "codexLinuxTitleBarOverlay";
@@ -268,35 +271,243 @@ function applyLinuxNativeTitlebarPatch(currentSource) {
   );
 }
 
+const MINIFIED_IDENTIFIER = "[A-Za-z_$][\\w$]*";
+const LINUX_MANAGED_WINDOW_MENU_STRATEGY = "linux-managed-window-menu";
+
+function linuxSystemContextMenuPatchFor(windowAlias) {
+  return (
+    `process.platform===\`linux\`&&(${windowAlias}.on(\`system-context-menu\`,` +
+    `e=>e.preventDefault()),${windowAlias}.removeMenu()),` +
+    `process.platform===\`win32\`&&${windowAlias}.removeMenu(),`
+  );
+}
+
+function semanticLinuxSystemContextMenuRegex(windowAlias, flags = "") {
+  const escapedWindowAlias = escapeRegExp(windowAlias);
+  return new RegExp(
+    `process\\.platform===\`linux\`&&\\(${escapedWindowAlias}\\.on\\(` +
+      `\`system-context-menu\`,(${MINIFIED_IDENTIFIER})=>\\1\\.preventDefault\\(\\)\\),` +
+      `${escapedWindowAlias}\\.removeMenu\\(\\)\\),process\\.platform===\`win32\`&&` +
+      `${escapedWindowAlias}\\.removeMenu\\(\\),`,
+    flags,
+  );
+}
+
+function managedWindowMenuTargetRegex(windowAlias, flags = "") {
+  const escapedWindowAlias = escapeRegExp(windowAlias);
+  return new RegExp(
+    `\\(process\\.platform===\`win32\`\\|\\|process\\.platform===\`linux\`\\)&&` +
+      `${escapedWindowAlias}\\.removeMenu\\(\\),`,
+    flags,
+  );
+}
+
+function managedWindowRemoveMenuCallRegex(windowAlias, flags = "") {
+  return new RegExp(
+    `${escapeRegExp(windowAlias)}\\.removeMenu\\(\\)`,
+    flags,
+  );
+}
+
+// The current bundle also creates a browser-comment popup inside createWindow.
+// Tie the required patch to the BrowserWindow that the WindowManager registers,
+// so an auxiliary popup can never satisfy the managed-window contract.
+function findManagedBrowserWindowCreateCandidates(currentSource) {
+  const signatureRegex = new RegExp(
+    `async createWindow\\((${MINIFIED_IDENTIFIER})=\\{\\}\\)\\{`,
+    "g",
+  );
+  const candidates = [];
+  let malformedMethod = false;
+  let signatureMatch;
+
+  while ((signatureMatch = signatureRegex.exec(currentSource)) != null) {
+    const openBraceIndex = signatureMatch.index + signatureMatch[0].length - 1;
+    const closeBraceIndex = findMatchingBrace(currentSource, openBraceIndex);
+    if (closeBraceIndex === -1) {
+      malformedMethod = true;
+      continue;
+    }
+
+    const methodText = currentSource.slice(signatureMatch.index, closeBraceIndex + 1);
+    const appearanceMatch = methodText.match(
+      new RegExp(
+        `^async createWindow\\(${escapeRegExp(signatureMatch[1])}=\\{\\}\\)\\{` +
+          `let\\{[^}]*appearance:(${MINIFIED_IDENTIFIER})(?:=[^,}]*)?`,
+      ),
+    );
+    if (appearanceMatch == null) {
+      signatureRegex.lastIndex = closeBraceIndex + 1;
+      continue;
+    }
+
+    const browserWindowAliases = new Set(
+      [...methodText.matchAll(
+        new RegExp(`(${MINIFIED_IDENTIFIER})=new ${MINIFIED_IDENTIFIER}\\.BrowserWindow\\(`, "g"),
+      )].map((match) => match[1]),
+    );
+    const registeredWindowAliases = new Set(
+      [...methodText.matchAll(
+        new RegExp(`this\\.registerWindow\\((${MINIFIED_IDENTIFIER}),`, "g"),
+      )].map((match) => match[1]),
+    );
+    for (const windowAlias of registeredWindowAliases) {
+      if (!browserWindowAliases.has(windowAlias)) {
+        continue;
+      }
+      candidates.push({
+        start: signatureMatch.index,
+        end: closeBraceIndex + 1,
+        text: methodText,
+        windowAlias,
+      });
+    }
+    signatureRegex.lastIndex = closeBraceIndex + 1;
+  }
+
+  return { candidates, malformedMethod };
+}
+
+function applyLinuxManagedWindowSystemContextMenuPatch(currentSource) {
+  const { candidates, malformedMethod } =
+    findManagedBrowserWindowCreateCandidates(currentSource);
+  if (malformedMethod) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "malformed-create-window");
+    throw new Error(
+      "Could not parse WindowManager.createWindow while patching its managed BrowserWindow menu",
+    );
+  }
+  if (candidates.length === 0) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "none");
+    throw new Error(
+      "Could not identify the managed BrowserWindow in WindowManager.createWindow",
+    );
+  }
+  if (candidates.length > 1) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "ambiguous");
+    throw new Error(
+      `Found ${candidates.length} managed BrowserWindow candidates in createWindow methods`,
+    );
+  }
+
+  const candidate = candidates[0];
+  const { windowAlias } = candidate;
+  const listenerRegex = new RegExp(
+    `${escapeRegExp(windowAlias)}\\.(?:on|addListener|once|prependListener|prependOnceListener)` +
+      `\\(\\s*(?:\`system-context-menu\`|"system-context-menu"|'system-context-menu')\\s*,`,
+    "g",
+  );
+  const listenerCount = [...candidate.text.matchAll(listenerRegex)].length;
+  const removeMenuCallCount = [
+    ...candidate.text.matchAll(
+      managedWindowRemoveMenuCallRegex(windowAlias, "g"),
+    ),
+  ].length;
+  const semanticPatchRegex =
+    semanticLinuxSystemContextMenuRegex(windowAlias, "g");
+  const semanticMatches = [...candidate.text.matchAll(semanticPatchRegex)];
+
+  if (semanticMatches.length === 1 && listenerCount === 1) {
+    if (removeMenuCallCount !== 2) {
+      recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "ambiguous");
+      throw new Error(
+        `Found multiple menu targets for managed BrowserWindow '${windowAlias}'`,
+      );
+    }
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "already-applied");
+    return currentSource;
+  }
+  if (listenerCount > 0 || semanticMatches.length > 0) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "non-canonical-listener");
+    throw new Error(
+      `Managed BrowserWindow '${windowAlias}' has a non-canonical or duplicate system-context-menu listener`,
+    );
+  }
+
+  const targetMatches = [
+    ...candidate.text.matchAll(
+      managedWindowMenuTargetRegex(windowAlias, "g"),
+    ),
+  ];
+  if (targetMatches.length === 0) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "none");
+    throw new Error(
+      `Could not find the menu-removal target for managed BrowserWindow '${windowAlias}'`,
+    );
+  }
+  if (targetMatches.length > 1) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "ambiguous");
+    throw new Error(
+      `Found ${targetMatches.length} menu-removal targets for managed BrowserWindow '${windowAlias}'`,
+    );
+  }
+  if (removeMenuCallCount !== 1) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "ambiguous");
+    throw new Error(
+      `Found ${removeMenuCallCount} removeMenu calls for managed BrowserWindow '${windowAlias}'`,
+    );
+  }
+
+  const targetMatch = targetMatches[0];
+  const patchedMethod =
+    candidate.text.slice(0, targetMatch.index) +
+    linuxSystemContextMenuPatchFor(windowAlias) +
+    candidate.text.slice(targetMatch.index + targetMatch[0].length);
+  const patchedListenerCount = [
+    ...patchedMethod.matchAll(
+      new RegExp(
+        `${escapeRegExp(windowAlias)}\\.on\\(\`system-context-menu\`,`,
+        "g",
+      ),
+    ),
+  ].length;
+  if (
+    patchedListenerCount !== 1 ||
+    !semanticLinuxSystemContextMenuRegex(windowAlias).test(patchedMethod)
+  ) {
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "validation-failed");
+    throw new Error(
+      `Failed to validate the system-context-menu patch for managed BrowserWindow '${windowAlias}'`,
+    );
+  }
+
+  recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "upstream-combined");
+  return (
+    currentSource.slice(0, candidate.start) +
+    patchedMethod +
+    currentSource.slice(candidate.end)
+  );
+}
+
 function applyLinuxMenuPatch(currentSource) {
   const menuRegex = /process\.platform===`win32`&&([A-Za-z_$][\w$]*)\.removeMenu\(\),/g;
-  const linuxMenuPatchFor = (windowVar) =>
-    `process.platform===\`linux\`&&(${windowVar}.on(\`system-context-menu\`,e=>e.preventDefault()),${windowVar}.removeMenu()),`;
-  let patchedSource = currentSource
-    .replace(
-      /process\.platform===`linux`&&\(([A-Za-z_$][\w$]*)\.setMenuBarVisibility\(!1\),\1\.removeMenu\?\.\(\)\),process\.platform===`win32`&&\1\.removeMenu\(\),/g,
-      (_match, windowVar) => `${linuxMenuPatchFor(windowVar)}process.platform===\`win32\`&&${windowVar}.removeMenu(),`,
-    )
-    .replace(
-      /process\.platform===`linux`&&([A-Za-z_$][\w$]*)\.setMenuBarVisibility\(!1\),process\.platform===`win32`&&\1\.removeMenu\(\),/g,
-      (_match, windowVar) => `${linuxMenuPatchFor(windowVar)}process.platform===\`win32\`&&${windowVar}.removeMenu(),`,
-    )
-    .replace(
-      /process\.platform===`linux`&&([A-Za-z_$][\w$]*)\.removeMenu\(\),process\.platform===`win32`&&\1\.removeMenu\(\),/g,
-      (_match, windowVar) => `${linuxMenuPatchFor(windowVar)}process.platform===\`win32\`&&${windowVar}.removeMenu(),`,
-    );
+  let patchedSource = currentSource.replace(
+    /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&([A-Za-z_$][\w$]*)\.removeMenu\(\),/g,
+    (_match, windowVar) => linuxSystemContextMenuPatchFor(windowVar),
+  );
   let patchedAny = patchedSource !== currentSource;
   patchedSource = patchedSource.replace(menuRegex, (match, windowVar, offset, source) => {
-    const linuxPatch = linuxMenuPatchFor(windowVar);
-    if (source.slice(Math.max(0, offset - linuxPatch.length), offset) === linuxPatch) {
+    const linuxPatch = linuxSystemContextMenuPatchFor(windowVar);
+    const linuxPrefixRegex = new RegExp(
+      `${semanticLinuxSystemContextMenuRegex(windowVar).source}$`,
+    );
+    const prefixWithoutWindowsSuffix =
+      linuxPatch.slice(0, -match.length);
+    if (
+      source.slice(Math.max(0, offset - prefixWithoutWindowsSuffix.length), offset) ===
+        prefixWithoutWindowsSuffix ||
+      linuxPrefixRegex.test(
+        source.slice(0, offset + match.length),
+      )
+    ) {
       return match;
     }
     patchedAny = true;
-    return `${linuxPatch}${match}`;
+    return linuxPatch;
   });
 
   const hasWindowsRemoveMenu = /process\.platform===`win32`&&[A-Za-z_$][\w$]*\.removeMenu\(\),/.test(patchedSource);
-  const hasLinuxRemoveMenu = /process\.platform===`linux`&&\(([A-Za-z_$][\w$]*)\.on\(`system-context-menu`,[A-Za-z_$][\w$]*=>[A-Za-z_$][\w$]*\.preventDefault\(\)\),\1\.removeMenu\(\)\),process\.platform===`win32`&&\1\.removeMenu\(\),/.test(patchedSource);
+  const hasLinuxRemoveMenu = /process\.platform===`linux`&&\(([A-Za-z_$][\w$]*)\.on\(`system-context-menu`,([A-Za-z_$][\w$]*)=>\2\.preventDefault\(\)\),\1\.removeMenu\(\)\),process\.platform===`win32`&&\1\.removeMenu\(\),/.test(patchedSource);
   if (!patchedAny && hasWindowsRemoveMenu && !hasLinuxRemoveMenu) {
     console.warn("WARN: Could not find window menu visibility snippet — skipping menu patch");
   }
@@ -626,6 +837,7 @@ function applyLinuxOpaqueBackgroundPatch(currentSource) {
 module.exports = {
   applyLinuxAppReloadShortcutsPatch,
   applyLinuxApplicationMenuPatch,
+  applyLinuxManagedWindowSystemContextMenuPatch,
   applyLinuxMenuPatch,
   applyLinuxNativeTitlebarPatch,
   applyLinuxOpaqueBackgroundPatch,
