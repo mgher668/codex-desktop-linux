@@ -7150,6 +7150,18 @@ test("adds Linux package updater to current bootstrap updater wiring", () => {
   assert.doesNotMatch(patched, /codexLinuxRunUpdateManager\(\[`status`,`--json`\]\)/);
 });
 
+test("implements the current Sparkle AppView and RPC contract on Linux", () => {
+  const patched = applyLinuxAppUpdaterBridgePatch(currentBootstrapUpdaterBundleFixture());
+
+  assert.match(patched, /getDownloadProgressPercent:\(\)=>null/);
+  assert.match(patched, /getDownloadedUpdateAppBrand:\(\)=>null/);
+  assert.match(patched, /getInstallProgressPercent:\(\)=>r/);
+  assert.match(patched, /getIsUpdateReady:\(\)=>s&&t/);
+  assert.match(patched, /getUpdateLifecycleState:\(\)=>s\?n:`idle`/);
+  assert.match(patched, /getRelaunchNotice:\(\)=>null/);
+  assert.match(patched, /setSparkleQueryParams:\(\)=>\{\}/);
+});
+
 test("fails soft when the current updater callback bridge drifts", () => {
   for (const source of [
     currentBootstrapUpdaterBundleFixture().replace(
