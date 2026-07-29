@@ -273,22 +273,73 @@ function applyLinuxNativeTitlebarPatch(currentSource) {
 
 const MINIFIED_IDENTIFIER = "[A-Za-z_$][\\w$]*";
 const LINUX_MANAGED_WINDOW_MENU_STRATEGY = "linux-managed-window-menu";
+const LINUX_GNOME_X11_SYSTEM_CONTEXT_MENU_GUARD =
+  "process.platform===`linux`&&(process.env.XDG_SESSION_TYPE??``).trim().toLowerCase()===`x11`&&/(^|:)gnome(:|$)/i.test((process.env.XDG_CURRENT_DESKTOP??``).trim())";
+
+function linuxGnomeX11SystemContextMenuListenerFor(windowAlias, eventAlias = "e") {
+  return (
+    `${LINUX_GNOME_X11_SYSTEM_CONTEXT_MENU_GUARD}&&` +
+    `${windowAlias}.on(\`system-context-menu\`,${eventAlias}=>` +
+    `${eventAlias}.preventDefault()),`
+  );
+}
 
 function linuxSystemContextMenuPatchFor(windowAlias) {
   return (
-    `process.platform===\`linux\`&&(${windowAlias}.on(\`system-context-menu\`,` +
-    `e=>e.preventDefault()),${windowAlias}.removeMenu()),` +
+    linuxGnomeX11SystemContextMenuListenerFor(windowAlias) +
+    `process.platform===\`linux\`&&${windowAlias}.removeMenu(),` +
     `process.platform===\`win32\`&&${windowAlias}.removeMenu(),`
+  );
+}
+
+function linuxManagedWindowSystemContextMenuPatchFor(windowAlias) {
+  return (
+    linuxGnomeX11SystemContextMenuListenerFor(windowAlias) +
+    `(process.platform===\`win32\`||process.platform===\`linux\`)&&` +
+    `${windowAlias}.removeMenu(),`
   );
 }
 
 function semanticLinuxSystemContextMenuRegex(windowAlias, flags = "") {
   const escapedWindowAlias = escapeRegExp(windowAlias);
   return new RegExp(
+    `${escapeRegExp(LINUX_GNOME_X11_SYSTEM_CONTEXT_MENU_GUARD)}&&` +
+      `${escapedWindowAlias}\\.on\\(\`system-context-menu\`,(${MINIFIED_IDENTIFIER})=>` +
+      `\\1\\.preventDefault\\(\\)\\),process\\.platform===\`linux\`&&` +
+      `${escapedWindowAlias}\\.removeMenu\\(\\),process\\.platform===\`win32\`&&` +
+      `${escapedWindowAlias}\\.removeMenu\\(\\),`,
+    flags,
+  );
+}
+
+function semanticLegacyLinuxSystemContextMenuRegex(windowAlias, flags = "") {
+  const escapedWindowAlias = escapeRegExp(windowAlias);
+  return new RegExp(
     `process\\.platform===\`linux\`&&\\(${escapedWindowAlias}\\.on\\(` +
       `\`system-context-menu\`,(${MINIFIED_IDENTIFIER})=>\\1\\.preventDefault\\(\\)\\),` +
       `${escapedWindowAlias}\\.removeMenu\\(\\)\\),process\\.platform===\`win32\`&&` +
       `${escapedWindowAlias}\\.removeMenu\\(\\),`,
+    flags,
+  );
+}
+
+function legacyLinuxSystemContextMenuRegex(flags = "") {
+  return new RegExp(
+    `process\\.platform===\`linux\`&&\\((${MINIFIED_IDENTIFIER})\\.on\\(` +
+      `\`system-context-menu\`,(${MINIFIED_IDENTIFIER})=>\\2\\.preventDefault\\(\\)\\),` +
+      `\\1\\.removeMenu\\(\\)\\),process\\.platform===\`win32\`&&` +
+      `\\1\\.removeMenu\\(\\),`,
+    flags,
+  );
+}
+
+function semanticLinuxManagedWindowSystemContextMenuRegex(windowAlias, flags = "") {
+  const escapedWindowAlias = escapeRegExp(windowAlias);
+  return new RegExp(
+    `${escapeRegExp(LINUX_GNOME_X11_SYSTEM_CONTEXT_MENU_GUARD)}&&` +
+      `${escapedWindowAlias}\\.on\\(\`system-context-menu\`,(${MINIFIED_IDENTIFIER})=>` +
+      `\\1\\.preventDefault\\(\\)\\),\\(process\\.platform===\`win32\`\\|\\|` +
+      `process\\.platform===\`linux\`\\)&&${escapedWindowAlias}\\.removeMenu\\(\\),`,
     flags,
   );
 }
@@ -404,11 +455,16 @@ function applyLinuxManagedWindowSystemContextMenuPatch(currentSource) {
     ),
   ].length;
   const semanticPatchRegex =
-    semanticLinuxSystemContextMenuRegex(windowAlias, "g");
+    semanticLinuxManagedWindowSystemContextMenuRegex(windowAlias, "g");
   const semanticMatches = [...candidate.text.matchAll(semanticPatchRegex)];
+  const legacySemanticMatches = [
+    ...candidate.text.matchAll(
+      semanticLegacyLinuxSystemContextMenuRegex(windowAlias, "g"),
+    ),
+  ];
 
   if (semanticMatches.length === 1 && listenerCount === 1) {
-    if (removeMenuCallCount !== 2) {
+    if (removeMenuCallCount !== 1) {
       recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "ambiguous");
       throw new Error(
         `Found multiple menu targets for managed BrowserWindow '${windowAlias}'`,
@@ -416,6 +472,34 @@ function applyLinuxManagedWindowSystemContextMenuPatch(currentSource) {
     }
     recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "already-applied");
     return currentSource;
+  }
+  if (
+    legacySemanticMatches.length === 1 &&
+    semanticMatches.length === 0 &&
+    listenerCount === 1 &&
+    removeMenuCallCount === 2
+  ) {
+    const legacyMatch = legacySemanticMatches[0];
+    const patchedMethod =
+      candidate.text.slice(0, legacyMatch.index) +
+      linuxManagedWindowSystemContextMenuPatchFor(windowAlias) +
+      candidate.text.slice(legacyMatch.index + legacyMatch[0].length);
+    if (
+      !semanticLinuxManagedWindowSystemContextMenuRegex(windowAlias).test(
+        patchedMethod,
+      )
+    ) {
+      recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "validation-failed");
+      throw new Error(
+        `Failed to validate the scoped system-context-menu migration for managed BrowserWindow '${windowAlias}'`,
+      );
+    }
+    recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "legacy-unscoped");
+    return (
+      currentSource.slice(0, candidate.start) +
+      patchedMethod +
+      currentSource.slice(candidate.end)
+    );
   }
   if (listenerCount > 0 || semanticMatches.length > 0) {
     recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "non-canonical-listener");
@@ -451,7 +535,7 @@ function applyLinuxManagedWindowSystemContextMenuPatch(currentSource) {
   const targetMatch = targetMatches[0];
   const patchedMethod =
     candidate.text.slice(0, targetMatch.index) +
-    linuxSystemContextMenuPatchFor(windowAlias) +
+    linuxManagedWindowSystemContextMenuPatchFor(windowAlias) +
     candidate.text.slice(targetMatch.index + targetMatch[0].length);
   const patchedListenerCount = [
     ...patchedMethod.matchAll(
@@ -463,7 +547,9 @@ function applyLinuxManagedWindowSystemContextMenuPatch(currentSource) {
   ].length;
   if (
     patchedListenerCount !== 1 ||
-    !semanticLinuxSystemContextMenuRegex(windowAlias).test(patchedMethod)
+    !semanticLinuxManagedWindowSystemContextMenuRegex(windowAlias).test(
+      patchedMethod,
+    )
   ) {
     recordStrategy(LINUX_MANAGED_WINDOW_MENU_STRATEGY, "validation-failed");
     throw new Error(
@@ -482,8 +568,25 @@ function applyLinuxManagedWindowSystemContextMenuPatch(currentSource) {
 function applyLinuxMenuPatch(currentSource) {
   const menuRegex = /process\.platform===`win32`&&([A-Za-z_$][\w$]*)\.removeMenu\(\),/g;
   let patchedSource = currentSource.replace(
+    legacyLinuxSystemContextMenuRegex("g"),
+    (_match, windowVar) =>
+      linuxSystemContextMenuPatchFor(windowVar),
+  );
+  patchedSource = patchedSource.replace(
     /\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&([A-Za-z_$][\w$]*)\.removeMenu\(\),/g,
-    (_match, windowVar) => linuxSystemContextMenuPatchFor(windowVar),
+    (match, windowVar, offset, source) => {
+      const scopedListener =
+        linuxGnomeX11SystemContextMenuListenerFor(windowVar);
+      if (
+        source.slice(
+          Math.max(0, offset - scopedListener.length),
+          offset,
+        ) === scopedListener
+      ) {
+        return match;
+      }
+      return linuxSystemContextMenuPatchFor(windowVar);
+    },
   );
   let patchedAny = patchedSource !== currentSource;
   patchedSource = patchedSource.replace(menuRegex, (match, windowVar, offset, source) => {
@@ -507,7 +610,13 @@ function applyLinuxMenuPatch(currentSource) {
   });
 
   const hasWindowsRemoveMenu = /process\.platform===`win32`&&[A-Za-z_$][\w$]*\.removeMenu\(\),/.test(patchedSource);
-  const hasLinuxRemoveMenu = /process\.platform===`linux`&&\(([A-Za-z_$][\w$]*)\.on\(`system-context-menu`,([A-Za-z_$][\w$]*)=>\2\.preventDefault\(\)\),\1\.removeMenu\(\)\),process\.platform===`win32`&&\1\.removeMenu\(\),/.test(patchedSource);
+  const hasLinuxRemoveMenu = new RegExp(
+    `${escapeRegExp(LINUX_GNOME_X11_SYSTEM_CONTEXT_MENU_GUARD)}&&` +
+      `(${MINIFIED_IDENTIFIER})\\.on\\(\`system-context-menu\`,` +
+      `(${MINIFIED_IDENTIFIER})=>\\2\\.preventDefault\\(\\)\\),` +
+      `process\\.platform===\`linux\`&&\\1\\.removeMenu\\(\\),` +
+      `process\\.platform===\`win32\`&&\\1\\.removeMenu\\(\\),`,
+  ).test(patchedSource);
   if (!patchedAny && hasWindowsRemoveMenu && !hasLinuxRemoveMenu) {
     console.warn("WARN: Could not find window menu visibility snippet — skipping menu patch");
   }

@@ -8821,7 +8821,20 @@ test_linux_file_manager_patch_smoke() {
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
     assert_contains "$extracted/.vite/build/main-test.js" 'detect:()=>`linux-file-manager`'
     assert_contains "$extracted/.vite/build/main-test.js" 'linux:{label:`File Manager`'
-    assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&(D.on(`system-context-menu`,e=>e.preventDefault()),D.removeMenu()),process.platform===`win32`&&D.removeMenu(),'
+    node - "$extracted/.vite/build/main-test.js" <<'NODE'
+const fs = require("node:fs");
+const source = fs.readFileSync(process.argv[2], "utf8");
+const expected =
+  "process.platform===`linux`&&" +
+  "(process.env.XDG_SESSION_TYPE??``).trim().toLowerCase()===`x11`&&" +
+  "/(^|:)gnome(:|$)/i.test((process.env.XDG_CURRENT_DESKTOP??``).trim())&&" +
+  "D.on(`system-context-menu`,e=>e.preventDefault())," +
+  "process.platform===`linux`&&D.removeMenu()," +
+  "process.platform===`win32`&&D.removeMenu(),";
+if (!source.includes(expected)) {
+  throw new Error("Expected the generic window listener to be scoped to GNOME/X11");
+}
+NODE
     assert_not_contains "$extracted/.vite/build/main-test.js" 'D.setMenuBarVisibility(!1)'
     assert_contains "$extracted/.vite/build/main-test.js" '&&D.setIcon('
     assert_contains "$extracted/webview/assets/app-initial-test.js" '`subAgent`in e?e.subAgent:`subagent`in e?e.subagent:null'
@@ -8856,12 +8869,29 @@ test_linux_titlebar_context_menu_patch_smoke() {
         "$extracted/.vite/build/main-test.js" \
         'system-context-menu' \
         '2'
-    assert_contains \
-        "$extracted/.vite/build/main-test.js" \
-        'process.platform===`linux`&&(N.on(`system-context-menu`,e=>e.preventDefault()),N.removeMenu()),process.platform===`win32`&&N.removeMenu(),'
-    assert_contains \
-        "$extracted/.vite/build/main-test.js" \
-        'process.platform===`linux`&&(e.on(`system-context-menu`,e=>e.preventDefault()),e.removeMenu()),process.platform===`win32`&&e.removeMenu(),'
+    node - "$extracted/.vite/build/main-test.js" <<'NODE'
+const fs = require("node:fs");
+const source = fs.readFileSync(process.argv[2], "utf8");
+const expected =
+  "process.platform===`linux`&&" +
+  "(process.env.XDG_SESSION_TYPE??``).trim().toLowerCase()===`x11`&&" +
+  "/(^|:)gnome(:|$)/i.test((process.env.XDG_CURRENT_DESKTOP??``).trim())&&" +
+  "N.on(`system-context-menu`,e=>e.preventDefault())," +
+  "(process.platform===`win32`||process.platform===`linux`)&&N.removeMenu(),";
+if (!source.includes(expected)) {
+  throw new Error("Expected the managed-window listener to be scoped to GNOME/X11");
+}
+const popupExpected =
+  "process.platform===`linux`&&" +
+  "(process.env.XDG_SESSION_TYPE??``).trim().toLowerCase()===`x11`&&" +
+  "/(^|:)gnome(:|$)/i.test((process.env.XDG_CURRENT_DESKTOP??``).trim())&&" +
+  "e.on(`system-context-menu`,e=>e.preventDefault())," +
+  "process.platform===`linux`&&e.removeMenu()," +
+  "process.platform===`win32`&&e.removeMenu(),";
+if (!source.includes(popupExpected)) {
+  throw new Error("Expected the popup listener to be scoped to GNOME/X11");
+}
+NODE
     node - "$first_report" <<'NODE'
 const fs = require("node:fs");
 const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -8870,6 +8900,9 @@ const entry = report.patches.find(
 );
 if (entry?.status !== "applied") {
   throw new Error(`Expected managed-window patch to be applied, got ${entry?.status}`);
+}
+if (entry?.ciPolicy !== "optional") {
+  throw new Error(`Expected managed-window patch to be optional, got ${entry?.ciPolicy}`);
 }
 if (
   JSON.stringify(entry.strategies) !==

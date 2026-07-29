@@ -62,7 +62,7 @@ module.exports = [
     id: "linux-managed-window-system-context-menu",
     phase: "main-bundle",
     order: 59,
-    ciPolicy: "required-upstream",
+    ciPolicy: "optional",
     apply: applyLinuxManagedWindowSystemContextMenuPatch,
   }),
   mainBundlePatch({

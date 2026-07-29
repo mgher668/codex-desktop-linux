@@ -1099,6 +1099,14 @@ test("default core patch descriptors are grouped and unique", () => {
     "optional",
   );
   assert.equal(
+    descriptors.find(
+      (descriptor) =>
+        descriptor.id === "linux-managed-window-system-context-menu",
+    )?.ciPolicy,
+    "optional",
+    "GNOME/X11 titlebar mitigation drift should warn without blocking install or updater candidates",
+  );
+  assert.equal(
     descriptors.find((descriptor) => descriptor.id === "linux-computer-use-native-desktop-apps")?.ciPolicy,
     "opt-in",
   );
@@ -1137,7 +1145,6 @@ test("default core patch descriptors are grouped and unique", () => {
   );
   for (const id of [
     "linux-window-options",
-    "linux-managed-window-system-context-menu",
     "linux-native-titlebar",
     "linux-opaque-background",
     "linux-avatar-overlay-mouse-passthrough",
@@ -3380,11 +3387,40 @@ function windowsAndLinuxMenuSnippet(windowAlias) {
   );
 }
 
+function gnomeX11SystemContextMenuListenerSnippet(
+  windowAlias,
+  eventAlias = "e",
+) {
+  return (
+    "process.platform===`linux`&&" +
+    "(process.env.XDG_SESSION_TYPE??``).trim().toLowerCase()===`x11`&&" +
+    "/(^|:)gnome(:|$)/i.test((process.env.XDG_CURRENT_DESKTOP??``).trim())&&" +
+    `${windowAlias}.on(\`system-context-menu\`,${eventAlias}=>` +
+    `${eventAlias}.preventDefault()),`
+  );
+}
+
 function canonicalLinuxMenuSnippet(windowAlias, eventAlias = "e") {
+  return (
+    gnomeX11SystemContextMenuListenerSnippet(windowAlias, eventAlias) +
+    `process.platform===\`linux\`&&${windowAlias}.removeMenu(),` +
+    `process.platform===\`win32\`&&${windowAlias}.removeMenu(),`
+  );
+}
+
+function legacyAllLinuxMenuSnippet(windowAlias, eventAlias = "e") {
   return (
     `process.platform===\`linux\`&&(${windowAlias}.on(\`system-context-menu\`,` +
     `${eventAlias}=>${eventAlias}.preventDefault()),${windowAlias}.removeMenu()),` +
     `process.platform===\`win32\`&&${windowAlias}.removeMenu(),`
+  );
+}
+
+function scopedManagedLinuxMenuSnippet(windowAlias, eventAlias = "e") {
+  return (
+    gnomeX11SystemContextMenuListenerSnippet(windowAlias, eventAlias) +
+    `(process.platform===\`win32\`||process.platform===\`linux\`)&&` +
+    `${windowAlias}.removeMenu(),`
   );
 }
 
@@ -3416,12 +3452,23 @@ test("patches the managed WindowManager window before the browser-comment popup"
   assert.equal(
     (managedPatched.slice(popupStart).match(/system-context-menu/g) ?? []).length,
     0,
-    "the required managed-window patch must not claim success by patching only the popup",
+    "the managed-window patch must not claim success by patching only the popup",
   );
-  assert.match(managedPatched, new RegExp(escapeRegExp(canonicalLinuxMenuSnippet("N"))));
+  assert.match(
+    managedPatched,
+    new RegExp(escapeRegExp(scopedManagedLinuxMenuSnippet("N"))),
+  );
 
   const fullyPatched = applyLinuxMenuPatch(managedPatched);
   assert.equal((fullyPatched.match(/system-context-menu/g) ?? []).length, 2);
+  assert.match(
+    fullyPatched,
+    new RegExp(escapeRegExp(scopedManagedLinuxMenuSnippet("N"))),
+  );
+  assert.match(
+    fullyPatched,
+    new RegExp(escapeRegExp(canonicalLinuxMenuSnippet("e"))),
+  );
   assert.equal(
     applyLinuxMenuPatch(
       applyLinuxManagedWindowSystemContextMenuPatch(fullyPatched),
@@ -3443,19 +3490,41 @@ test("patches the current WindowManager contract across minified aliases", () =>
 
   assert.match(
     patched,
-    new RegExp(escapeRegExp(canonicalLinuxMenuSnippet("M"))),
+    new RegExp(escapeRegExp(scopedManagedLinuxMenuSnippet("M"))),
   );
 });
 
 test("recognizes an equivalent managed-window preventDefault listener", () => {
   const source = managedWindowMenuFixture(
-    canonicalLinuxMenuSnippet("N", "event"),
+    scopedManagedLinuxMenuSnippet("N", "event"),
   );
 
   assert.equal(
     applyLinuxManagedWindowSystemContextMenuPatch(source),
     source,
   );
+});
+
+test("migrates the legacy all-Linux managed-window listener to GNOME/X11", () => {
+  const source = managedWindowMenuFixture(
+    legacyAllLinuxMenuSnippet("N", "event"),
+  );
+  const patched = applyPatchTwice(
+    applyLinuxManagedWindowSystemContextMenuPatch,
+    source,
+  );
+
+  assert.match(
+    patched,
+    new RegExp(
+      escapeRegExp(scopedManagedLinuxMenuSnippet("N")),
+    ),
+  );
+  assert.doesNotMatch(
+    patched,
+    new RegExp(escapeRegExp(legacyAllLinuxMenuSnippet("N", "event"))),
+  );
+  assert.equal((patched.match(/system-context-menu/g) ?? []).length, 1);
 });
 
 test("rejects malformed or duplicate managed-window system context menu listeners", () => {
@@ -3469,7 +3538,7 @@ test("rejects malformed or duplicate managed-window system context menu listener
   );
 
   const duplicate = managedWindowMenuFixture(
-    canonicalLinuxMenuSnippet("N") +
+    scopedManagedLinuxMenuSnippet("N") +
       "N.on(`system-context-menu`,event=>event.preventDefault()),",
   );
   assert.throws(
@@ -3478,7 +3547,7 @@ test("rejects malformed or duplicate managed-window system context menu listener
   );
 
   const duplicateMenuTarget = managedWindowMenuFixture(
-    canonicalLinuxMenuSnippet("N") +
+    scopedManagedLinuxMenuSnippet("N") +
       "process.platform===`win32`&&N.removeMenu(),",
   );
   assert.throws(
@@ -3548,7 +3617,7 @@ test("fails loudly when the managed window is missing or ambiguous", () => {
   );
 });
 
-test("records managed-window menu drift as a required patch failure", () => {
+test("records managed-window menu drift as optional without blocking candidates", () => {
   const descriptor = corePatchDescriptors().find(
     (candidate) =>
       candidate.id === "linux-managed-window-system-context-menu",
@@ -3567,14 +3636,73 @@ test("records managed-window menu drift as a required patch failure", () => {
   );
 
   assert.equal(result.patchedSource, source);
+  assert.deepEqual(result.requiredCoreWarnings, []);
   const entry = report.patches.find(
     (patch) => patch.name === descriptor.id,
   );
-  assert.equal(entry?.status, "failed-required");
+  assert.equal(entry?.ciPolicy, "optional");
+  assert.equal(entry?.status, "skipped-optional");
   assert.match(entry?.reason ?? "", /Could not identify the managed BrowserWindow/);
   assert.deepEqual(entry?.strategies, [
     { group: "linux-managed-window-menu", strategy: "none" },
   ]);
+  assert.deepEqual(criticalFailuresFromReport(report), []);
+  assert.deepEqual(
+    optionalDriftFromReport(report).map(({ name, status }) => ({
+      name,
+      status,
+    })),
+    [
+      {
+        name: "linux-managed-window-system-context-menu",
+        status: "skipped-optional",
+      },
+    ],
+  );
+});
+
+test("keeps the generic fallback GNOME/X11-scoped when the managed matcher drifts", () => {
+  const descriptors = corePatchDescriptors().filter(
+    (candidate) =>
+      candidate.id === "linux-managed-window-system-context-menu" ||
+      candidate.id === "linux-menu",
+  );
+  const source = [
+    "class DriftedWindowManager{async createWindowDrift(e={}){",
+    "let{appearance:o=`primary`}=e,N=new electron.BrowserWindow({});",
+    windowsAndLinuxMenuSnippet("N"),
+    "return N}}",
+  ].join("");
+  const report = createPatchReport();
+
+  const result = applyMainBundlePatchDescriptors(
+    source,
+    descriptors,
+    {},
+    report,
+  );
+
+  assert.deepEqual(result.requiredCoreWarnings, []);
+  assert.match(
+    result.patchedSource,
+    new RegExp(escapeRegExp(canonicalLinuxMenuSnippet("N"))),
+  );
+  assert.doesNotMatch(
+    result.patchedSource,
+    /process\.platform===`linux`&&\(N\.on\(`system-context-menu`/,
+  );
+  assert.equal(
+    report.patches.find(
+      (patch) =>
+        patch.name === "linux-managed-window-system-context-menu",
+    )?.status,
+    "skipped-optional",
+  );
+  assert.equal(
+    report.patches.find((patch) => patch.name === "linux-menu")?.status,
+    "applied",
+  );
+  assert.deepEqual(criticalFailuresFromReport(report), []);
 });
 
 test("reports managed-window patch strategy and idempotence", () => {
@@ -3624,15 +3752,83 @@ test("reports managed-window patch strategy and idempotence", () => {
   ]);
 });
 
-test("keeps managed-window menu behavior platform-specific at runtime", async () => {
+test("suppresses the managed-window system menu only on GNOME/X11", async () => {
   const source = applyLinuxManagedWindowSystemContextMenuPatch(
     managedWindowMenuFixture(windowsAndLinuxMenuSnippet("N")),
   );
 
   for (const expected of [
-    { platform: "linux", removeMenuCalls: 1, preventDefaultCalls: 1 },
-    { platform: "win32", removeMenuCalls: 1, preventDefaultCalls: 0 },
-    { platform: "darwin", removeMenuCalls: 0, preventDefaultCalls: 0 },
+    {
+      name: "GNOME X11",
+      platform: "linux",
+      env: {
+        XDG_CURRENT_DESKTOP: "GNOME",
+        XDG_SESSION_TYPE: "x11",
+      },
+      listenerCount: 1,
+      removeMenuCalls: 1,
+      preventDefaultCalls: 1,
+    },
+    {
+      name: "Ubuntu GNOME X11 with normalized session casing",
+      platform: "linux",
+      env: {
+        XDG_CURRENT_DESKTOP: "ubuntu:GNOME",
+        XDG_SESSION_TYPE: " X11 ",
+      },
+      listenerCount: 1,
+      removeMenuCalls: 1,
+      preventDefaultCalls: 1,
+    },
+    {
+      name: "GNOME Wayland",
+      platform: "linux",
+      env: {
+        XDG_CURRENT_DESKTOP: "GNOME",
+        XDG_SESSION_TYPE: "wayland",
+      },
+      listenerCount: 0,
+      removeMenuCalls: 1,
+      preventDefaultCalls: 0,
+    },
+    {
+      name: "KDE X11",
+      platform: "linux",
+      env: {
+        XDG_CURRENT_DESKTOP: "KDE",
+        XDG_SESSION_TYPE: "x11",
+      },
+      listenerCount: 0,
+      removeMenuCalls: 1,
+      preventDefaultCalls: 0,
+    },
+    {
+      name: "unknown Linux session",
+      platform: "linux",
+      env: {},
+      listenerCount: 0,
+      removeMenuCalls: 1,
+      preventDefaultCalls: 0,
+    },
+    {
+      name: "Windows with copied Linux environment",
+      platform: "win32",
+      env: {
+        XDG_CURRENT_DESKTOP: "GNOME",
+        XDG_SESSION_TYPE: "x11",
+      },
+      listenerCount: 0,
+      removeMenuCalls: 1,
+      preventDefaultCalls: 0,
+    },
+    {
+      name: "macOS",
+      platform: "darwin",
+      env: {},
+      listenerCount: 0,
+      removeMenuCalls: 0,
+      preventDefaultCalls: 0,
+    },
   ]) {
     class BrowserWindow extends EventEmitter {
       constructor() {
@@ -3647,13 +3843,21 @@ test("keeps managed-window menu behavior platform-specific at runtime", async ()
 
     const context = vm.createContext({
       electron: { BrowserWindow },
-      process: { platform: expected.platform },
+      process: {
+        env: expected.env,
+        platform: expected.platform,
+      },
     });
     vm.runInContext(
       `${source};globalThis.ManagedWindowManager=WindowManager;`,
       context,
     );
     const window = await new context.ManagedWindowManager().createWindow();
+    assert.equal(
+      window.listenerCount("system-context-menu"),
+      expected.listenerCount,
+      expected.name,
+    );
     let preventDefaultCalls = 0;
     window.emit("system-context-menu", {
       preventDefault() {
@@ -3663,12 +3867,12 @@ test("keeps managed-window menu behavior platform-specific at runtime", async ()
     assert.equal(
       window.removeMenuCalls,
       expected.removeMenuCalls,
-      expected.platform,
+      expected.name,
     );
     assert.equal(
       preventDefaultCalls,
       expected.preventDefaultCalls,
-      expected.platform,
+      expected.name,
     );
   }
 });
@@ -3685,16 +3889,14 @@ test("removes the Linux menu next to Windows removeMenu calls", () => {
   const source = "process.platform===`win32`&&k.removeMenu(),";
   const patched = applyPatchTwice(applyLinuxMenuPatch, source);
 
-  assert.equal(
-    patched,
-    "process.platform===`linux`&&(k.on(`system-context-menu`,e=>e.preventDefault()),k.removeMenu()),process.platform===`win32`&&k.removeMenu(),",
-  );
+  assert.equal(patched, canonicalLinuxMenuSnippet("k"));
 });
 
 test("patches remaining Windows menu snippets when another copy is already Linux-patched", () => {
   const windowsMenuSnippet = "process.platform===`win32`&&k.removeMenu(),";
   const linuxMenuPatch =
-    "process.platform===`linux`&&(k.on(`system-context-menu`,e=>e.preventDefault()),k.removeMenu()),";
+    gnomeX11SystemContextMenuListenerSnippet("k") +
+    "process.platform===`linux`&&k.removeMenu(),";
   const source = `${linuxMenuPatch}${windowsMenuSnippet}function createSecondWindow(){${windowsMenuSnippet}}`;
 
   const patched = applyPatchTwice(applyLinuxMenuPatch, source);
@@ -3703,17 +3905,32 @@ test("patches remaining Windows menu snippets when another copy is already Linux
   assert.equal((patched.match(/system-context-menu/g) ?? []).length, 2);
   assert.match(
     patched,
-    /function createSecondWindow\(\)\{process\.platform===`linux`&&\(k\.on\(`system-context-menu`,e=>e\.preventDefault\(\)\),k\.removeMenu\(\)\),process\.platform===`win32`&&k\.removeMenu\(\),\}/,
+    new RegExp(
+      escapeRegExp(
+        `function createSecondWindow(){${canonicalLinuxMenuSnippet("k")}}`,
+      ),
+    ),
   );
 });
 
 test("recognizes the Linux system context menu suppression snippet as already applied", () => {
-  const source =
-    "process.platform===`linux`&&(k.on(`system-context-menu`,e=>e.preventDefault()),k.removeMenu()),process.platform===`win32`&&k.removeMenu(),";
+  const source = canonicalLinuxMenuSnippet("k");
 
   const patched = applyPatchTwice(applyLinuxMenuPatch, source);
 
   assert.equal(patched, source);
+  assert.equal((patched.match(/system-context-menu/g) ?? []).length, 1);
+});
+
+test("migrates legacy generic system-menu suppression to GNOME/X11", () => {
+  const source = legacyAllLinuxMenuSnippet("k", "event");
+  const patched = applyPatchTwice(applyLinuxMenuPatch, source);
+
+  assert.equal(patched, canonicalLinuxMenuSnippet("k"));
+  assert.doesNotMatch(
+    patched,
+    new RegExp(escapeRegExp(source)),
+  );
   assert.equal((patched.match(/system-context-menu/g) ?? []).length, 1);
 });
 
@@ -10764,7 +10981,7 @@ test("patchMainBundleSource keeps non-icon patches active without an icon asset"
   assert.match(patched, /n\.app\.on\(`before-quit`,codexLinuxBeforeQuitHandler\)/);
   assert.match(
     patched,
-    /process\.platform===`linux`&&\(k\.on\(`system-context-menu`,e=>e\.preventDefault\(\)\),k\.removeMenu\(\)\)/,
+    new RegExp(escapeRegExp(canonicalLinuxMenuSnippet("k"))),
   );
   assert.match(patched, /linux:\{label:`File Manager`/);
   assert.match(
