@@ -505,7 +505,7 @@ function managedWindowRemoveMenuCallRegex(windowAlias, flags = "") {
 }
 
 // The current bundle also creates a browser-comment popup inside createWindow.
-// Tie the required patch to the BrowserWindow that the WindowManager registers,
+// Tie the managed-window patch to the BrowserWindow that the WindowManager registers,
 // so an auxiliary popup can never satisfy the managed-window contract.
 function findManagedBrowserWindowCreateCandidates(currentSource) {
   const signatureRegex = new RegExp(
