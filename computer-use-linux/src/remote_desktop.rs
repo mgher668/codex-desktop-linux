@@ -364,6 +364,8 @@ struct KscreenOutput {
     scale: f64,
     connected: bool,
     enabled: bool,
+    #[serde(default, rename = "replicationSource")]
+    replication_source: Option<i64>,
 }
 
 #[derive(serde::Deserialize)]
@@ -383,7 +385,9 @@ fn parse_kscreen_monitor_layout(json: &[u8]) -> Option<Vec<LogicalMonitor>> {
     let layout = config
         .outputs
         .into_iter()
-        .filter(|output| output.connected && output.enabled)
+        .filter(|output| {
+            output.connected && output.enabled && output.replication_source.unwrap_or(0) == 0
+        })
         .map(|output| {
             if !output.scale.is_finite()
                 || output.scale <= 0.0
@@ -1748,6 +1752,23 @@ mod tests {
         assert_eq!(
             (layout[1].x, layout[1].y, layout[1].width, layout[1].height),
             (1920, 0, 1440, 2560)
+        );
+    }
+
+    #[test]
+    fn kscreen_layout_excludes_mirrored_outputs() {
+        let layout = parse_kscreen_monitor_layout(
+            br#"{"outputs":[
+                {"pos":{"x":0,"y":0},"size":{"width":1920,"height":1080},"scale":1.0,"connected":true,"enabled":true,"replicationSource":0},
+                {"pos":{"x":1920,"y":0},"size":{"width":3840,"height":2160},"scale":2.0,"connected":true,"enabled":true,"replicationSource":1}
+            ]}"#,
+        )
+        .expect("KScreen workspace layout should parse");
+
+        assert_eq!(layout.len(), 1);
+        assert_eq!(
+            (layout[0].x, layout[0].y, layout[0].width, layout[0].height),
+            (0, 0, 1920, 1080)
         );
     }
 
