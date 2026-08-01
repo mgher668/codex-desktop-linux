@@ -59,7 +59,7 @@ function assetSources(candidate) {
 
 const CHROME_EXTENSION_ID = "hehggadaopoacecdllhhajmbjkdcmajg";
 
-function createChromeRuntimeCaches(root) {
+function createChromeRuntimeCaches(root, arch = process.arch) {
   const codexHome = path.join(root, "codex-home");
   const installedRoot = path.join(
     codexHome,
@@ -73,7 +73,7 @@ function createChromeRuntimeCaches(root) {
     installedVersion,
     "extension-host",
     "linux",
-    "x64",
+    arch,
     "extension-host",
   );
   fs.mkdirSync(path.dirname(installedHost), { recursive: true });
@@ -92,7 +92,7 @@ function createChromeRuntimeCaches(root) {
     runtimeVersion,
     "extension-host",
     "linux",
-    "x64",
+    arch,
     "extension-host",
   );
   const runtimeScripts = path.join(runtimeVersion, "scripts");
@@ -125,6 +125,7 @@ function createChromeRuntimeCaches(root) {
   fs.chmodSync(path.join(runtimeScripts, "browser-client.mjs"), 0o644);
 
   return {
+    arch,
     codexHome,
     installedHost,
     installedLatest: path.join(installedRoot, "latest"),
@@ -136,17 +137,32 @@ function createChromeRuntimeCaches(root) {
   };
 }
 
-function registerChromeRuntime(patched, fixture, geteuid = () => process.geteuid()) {
+function registerChromeRuntime(
+  patched,
+  fixture,
+  geteuid = () => process.geteuid(),
+  arch = fixture.arch,
+  requireFn = require,
+) {
   return vm.runInNewContext(
     `${patched};cq({codexHome:${JSON.stringify(fixture.codexHome)},extensionIds:["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],nativeHostName:"com.openai.codexextension",pluginRoot:${JSON.stringify(fixture.installedLatest)}});`,
     {
       process: {
         geteuid,
         platform: "linux",
-        arch: process.arch,
+        arch,
       },
-      require,
+      require: requireFn,
     },
+  );
+}
+
+function isLexicallyWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
   );
 }
 
@@ -234,7 +250,7 @@ test("registers the trusted Linux runtime cache instead of the installed cache",
       bridgeRoot,
       "extension-host",
       "linux",
-      "x64",
+      fixture.arch,
       "extension-host",
     );
     assert.equal(result.extensionHostPath, bridgeHost);
@@ -260,6 +276,127 @@ test("registers the trusted Linux runtime cache instead of the installed cache",
     );
     assert.equal(fs.readFileSync(fixture.installedHost, "utf8"), "TAMPERED_INSTALLED_HOST\n");
     assert.equal(fs.readFileSync(fixture.runtimeHost, "utf8"), "TRUSTED_RUNTIME_HOST\n");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps bridge registration removable with a symlinked CODEX_HOME", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-chrome-runtime-home-link-"));
+  try {
+    const fixture = createChromeRuntimeCaches(root);
+    const lexicalCodexHome = path.join(root, "codex-home-link");
+    fs.symlinkSync(fixture.codexHome, lexicalCodexHome, "dir");
+    fixture.codexHome = lexicalCodexHome;
+    fixture.installedLatest = path.join(
+      lexicalCodexHome,
+      "plugins",
+      "cache",
+      "openai-bundled",
+      "chrome",
+      "latest",
+    );
+    const patched = applyLinuxChromeNativeHostRuntimePatch(
+      currentChromePluginAppServerSourceBundleFixture(),
+    );
+    const result = await registerChromeRuntime(patched, fixture);
+    const pluginCacheRoot = path.join(
+      lexicalCodexHome,
+      "plugins",
+      "cache",
+      "openai-bundled",
+      "chrome",
+    );
+
+    assert.equal(isLexicallyWithin(pluginCacheRoot, result.extensionHostPath), true);
+    assert.equal(isLexicallyWithin(pluginCacheRoot, result.browserClientPath), true);
+    assert.equal(
+      fs.realpathSync(path.join(pluginCacheRoot, ".codex-linux-runtime")),
+      fixture.runtimeVersion,
+    );
+
+    const unrelatedEntry = {
+      extensionHostPath: path.join(root, "unrelated", "extension-host"),
+    };
+    const remainingEntries = [result, unrelatedEntry].filter(
+      (entry) => !isLexicallyWithin(pluginCacheRoot, entry.extensionHostPath),
+    );
+    assert.deepEqual(remainingEntries, [unrelatedEntry]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("preserves the existing bridge when atomic replacement fails", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-chrome-runtime-rename-"));
+  try {
+    const fixture = createChromeRuntimeCaches(root);
+    const bridgeRoot = path.join(fixture.installedRoot, ".codex-linux-runtime");
+    fs.symlinkSync(fixture.runtimeVersion, bridgeRoot, "dir");
+    const patched = applyLinuxChromeNativeHostRuntimePatch(
+      currentChromePluginAppServerSourceBundleFixture(),
+    );
+    const fsPromises = require("node:fs/promises");
+    const requireWithFailedRename = (specifier) => {
+      if (specifier !== "node:fs/promises") {
+        return require(specifier);
+      }
+      return {
+        ...fsPromises,
+        rename: async () => {
+          const error = new Error("injected bridge rename failure");
+          error.code = "EIO";
+          throw error;
+        },
+      };
+    };
+
+    await assert.rejects(
+      registerChromeRuntime(
+        patched,
+        fixture,
+        () => process.geteuid(),
+        fixture.arch,
+        requireWithFailedRename,
+      ),
+      /injected bridge rename failure/,
+    );
+    assert.equal(fs.lstatSync(bridgeRoot).isSymbolicLink(), true);
+    assert.equal(fs.realpathSync(bridgeRoot), fixture.runtimeVersion);
+    assert.deepEqual(
+      fs.readdirSync(fixture.installedRoot).filter((name) => name.includes(".tmp-")),
+      [],
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("registers the trusted arm64 runtime host", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-chrome-runtime-arm64-"));
+  try {
+    const fixture = createChromeRuntimeCaches(root, "arm64");
+    const patched = applyLinuxChromeNativeHostRuntimePatch(
+      currentChromePluginAppServerSourceBundleFixture(),
+    );
+    const result = await registerChromeRuntime(
+      patched,
+      fixture,
+      () => process.geteuid(),
+      "arm64",
+    );
+
+    assert.equal(result.extensionHostPath.includes("/linux/arm64/"), true);
+    assert.deepEqual(
+      {
+        dev: fs.statSync(result.extensionHostPath).dev,
+        ino: fs.statSync(result.extensionHostPath).ino,
+      },
+      {
+        dev: fs.statSync(fixture.runtimeHost).dev,
+        ino: fs.statSync(fixture.runtimeHost).ino,
+      },
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
