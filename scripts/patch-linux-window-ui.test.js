@@ -2801,6 +2801,56 @@ test("Linux will-quit bounds context disposal inside the quit deadline", async (
   ]);
 });
 
+test("Linux reduced will-quit branch shares the complete cleanup deadline", async () => {
+  const stalledContextDispose = new Promise(() => {});
+  let contextDisposeCalls = 0;
+  let disposablesCalls = 0;
+  let globalStateFlushCalls = 0;
+  let settingsFlushCalls = 0;
+  let stopCodexMicroCalls = 0;
+  let flushTracingCalls = 0;
+  const state = await runPatchedLinuxWillQuit({
+    contextDispose() {
+      contextDisposeCalls += 1;
+      return stalledContextDispose;
+    },
+    disposablesDispose() {
+      disposablesCalls += 1;
+    },
+    flushTracing() {
+      flushTracingCalls += 1;
+      return Promise.resolve();
+    },
+    globalStateFlush() {
+      globalStateFlushCalls += 1;
+      return Promise.resolve();
+    },
+    settingsFlush() {
+      settingsFlushCalls += 1;
+      return Promise.resolve();
+    },
+    shouldSkipDrain: true,
+    stopCodexMicro() {
+      stopCodexMicroCalls += 1;
+      return Promise.resolve();
+    },
+    timeoutMs: 5,
+  });
+
+  assert.equal(contextDisposeCalls, 1);
+  assert.equal(disposablesCalls, 1);
+  assert.equal(globalStateFlushCalls, 0);
+  assert.equal(settingsFlushCalls, 0);
+  assert.equal(stopCodexMicroCalls, 1);
+  assert.equal(flushTracingCalls, 1);
+  assert.equal(state.exitCalls, 1);
+  assert.deepEqual(state.exitCodes, [0]);
+  assert.equal(state.quitCalls, 0);
+  assert.deepEqual(state.warnings, [
+    "WARN: Linux quit cleanup failed Error: Linux quit cleanup timed out",
+  ]);
+});
+
 test("Linux will-quit logs rejected asynchronous drain work before exit", async () => {
   const state = await runPatchedLinuxWillQuit({
     globalStateFlush: () => Promise.reject(new Error("global-state flush rejected")),
@@ -2971,6 +3021,29 @@ test("recognizes the bounded Linux quit cleanup as already applied", () => {
   assert.equal(result.patchedSource, source);
   assert.deepEqual(warnings, []);
   assert.equal(report.patches[0]?.status, "already-applied");
+});
+
+test("does not accept a partial Linux quit cleanup call-site patch", () => {
+  const source = applyLinuxWillQuitDrainTimeoutPatch(
+    willQuitDrainBundleFixture(),
+  ).replace(
+    "codexLinuxRunQuitCleanup(()=>{c.dispose(),u.dispose();",
+    "codexLinuxRunQuitDrain(()=>{c.dispose(),u.dispose();",
+  );
+  const descriptor = corePatchDescriptors().find(
+    (candidate) => candidate.id === "linux-explicit-quit-drain-timeout",
+  );
+  const report = createPatchReport();
+  const { value: result, warnings } = captureWarns(() =>
+    applyMainBundlePatchDescriptors(source, [descriptor], {}, report),
+  );
+
+  assert.equal(result.patchedSource, source);
+  assert.deepEqual(warnings, [
+    "WARN: Could not uniquely match current will-quit drain sequence — skipping Linux explicit quit drain timeout patch",
+  ]);
+  assert.equal(report.patches[0]?.status, "failed-required");
+  assert.equal(report.patches[0]?.reason, warnings[0]);
 });
 
 test("a non-exiting Linux finalizer is not accepted as already applied", () => {

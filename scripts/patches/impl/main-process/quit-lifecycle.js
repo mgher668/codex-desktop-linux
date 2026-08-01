@@ -112,6 +112,40 @@ function currentWillQuitDrainCandidates(currentSource) {
   return candidates;
 }
 
+function hasAppliedWillQuitCleanupPostcondition(currentSource, appliedFinalizerStart) {
+  const listenerNeedle = ".app.on(`will-quit`,";
+  const listenerIndex = currentSource.lastIndexOf(
+    listenerNeedle,
+    appliedFinalizerStart,
+  );
+  if (listenerIndex === -1) {
+    return false;
+  }
+
+  const handlerStart = listenerIndex + listenerNeedle.length;
+  const handlerMatch = currentSource
+    .slice(handlerStart, handlerStart + 100)
+    .match(/^[A-Za-z_$][\w$]*=>\{/);
+  if (handlerMatch == null) {
+    return false;
+  }
+
+  const openBrace = handlerStart + handlerMatch[0].length - 1;
+  const closeBrace = findMatchingBrace(currentSource, openBrace);
+  if (
+    closeBrace === -1 ||
+    appliedFinalizerStart <= openBrace ||
+    appliedFinalizerStart >= closeBrace
+  ) {
+    return false;
+  }
+
+  const handlerBody = currentSource.slice(openBrace + 1, closeBrace);
+  return (
+    handlerBody.match(/codexLinuxRunQuitCleanup\(\(\)=>\{/g) ?? []
+  ).length === 2;
+}
+
 function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
   const linuxQuitDrainGuard = "process.platform===`linux`";
   const appliedMarkers = [
@@ -134,6 +168,10 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
     appliedFinalizerEnd > appliedFinalizerStart &&
     /finally\{[A-Za-z_$][\w$]*\.app\.exit\(0\)\}/.test(
       currentSource.slice(appliedFinalizerStart, appliedFinalizerEnd),
+    ) &&
+    hasAppliedWillQuitCleanupPostcondition(
+      currentSource,
+      appliedFinalizerStart,
     );
   if (
     appliedMarkers.every((marker) => currentSource.includes(marker)) &&
