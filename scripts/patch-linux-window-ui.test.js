@@ -2778,11 +2778,21 @@ test("Linux will-quit reaches app.exit after the drain deadline", async () => {
 
 test("Linux will-quit bounds context disposal inside the quit deadline", async () => {
   const stalledContextDispose = new Promise(() => {});
+  let contextDisposeCalls = 0;
+  let disposablesCalls = 0;
   const state = await runPatchedLinuxWillQuit({
-    contextDispose: () => stalledContextDispose,
+    contextDispose() {
+      contextDisposeCalls += 1;
+      return stalledContextDispose;
+    },
+    disposablesDispose() {
+      disposablesCalls += 1;
+    },
     timeoutMs: 5,
   });
 
+  assert.equal(contextDisposeCalls, 1);
+  assert.equal(disposablesCalls, 1);
   assert.equal(state.exitCalls, 1);
   assert.deepEqual(state.exitCodes, [0]);
   assert.equal(state.quitCalls, 0);
