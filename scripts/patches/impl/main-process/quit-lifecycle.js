@@ -152,14 +152,36 @@ function hasAppliedWillQuitCleanupPostcondition(currentSource, appliedFinalizerS
     return false;
   }
 
+  const identifier = "[A-Za-z_$][\\w$]*";
   const cleanupCall = /codexLinuxRunQuitCleanup\(\(\)=>\{/g;
-  const reducedCalls =
-    handlerBody
-      .slice(reducedBranchStart, reducedBranchEnd)
-      .match(cleanupCall)?.length ?? 0;
-  const fullCalls =
-    handlerBody.slice(reducedBranchEnd + 8).match(cleanupCall)?.length ?? 0;
-  return reducedCalls === 1 && fullCalls === 1;
+  const reducedBody = handlerBody.slice(
+    reducedBranchStart,
+    reducedBranchEnd,
+  );
+  const fullBody = handlerBody.slice(reducedBranchEnd + 8);
+  if (
+    (reducedBody.match(cleanupCall) ?? []).length !== 1 ||
+    (fullBody.match(cleanupCall) ?? []).length !== 1
+  ) {
+    return false;
+  }
+
+  const reducedMatch = reducedBody.match(new RegExp(
+    `codexLinuxRunQuitCleanup\\(\\(\\)=>\\{(?<hotkey>${identifier})\\.dispose\\(\\),(?<dictation>${identifier})\\.dispose\\(\\);return Promise\\.allSettled\\(\\[(?<stop>${identifier})\\(\\),(?<trace>${identifier})\\(\\)\\]\\)\\}\\)`,
+  ));
+  const fullMatch = fullBody.match(new RegExp(
+    `codexLinuxRunQuitCleanup\\(\\(\\)=>\\{(?<hotkey>${identifier})\\.dispose\\(\\),(?<dictation>${identifier})\\.dispose\\(\\);return Promise\\.allSettled\\(\\[(?<globalState>${identifier})\\.flush\\(\\),(?<settings>${identifier})\\.flush\\(\\),(?<stop>${identifier})\\(\\),(?<trace>${identifier})\\(\\)\\]\\)\\}\\)`,
+  ));
+  if (reducedMatch?.groups == null || fullMatch?.groups == null) {
+    return false;
+  }
+
+  return (
+    reducedMatch.groups.hotkey === fullMatch.groups.hotkey &&
+    reducedMatch.groups.dictation === fullMatch.groups.dictation &&
+    reducedMatch.groups.stop === fullMatch.groups.stop &&
+    reducedMatch.groups.trace === fullMatch.groups.trace
+  );
 }
 
 function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {

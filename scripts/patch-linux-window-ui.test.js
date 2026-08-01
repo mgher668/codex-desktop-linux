@@ -3046,6 +3046,39 @@ test("does not accept a partial Linux quit cleanup call-site patch", () => {
   assert.equal(report.patches[0]?.reason, warnings[0]);
 });
 
+test("does not accept damaged Linux quit cleanup factory bodies", () => {
+  const patched = applyLinuxWillQuitDrainTimeoutPatch(
+    willQuitDrainBundleFixture(),
+  );
+  const sources = [
+    patched.replace(
+      "codexLinuxRunQuitCleanup(()=>{c.dispose(),u.dispose();return Promise.allSettled([p(),m()])})",
+      "codexLinuxRunQuitCleanup(()=>Promise.resolve())",
+    ),
+    patched.replace(
+      "codexLinuxRunQuitCleanup(()=>{c.dispose(),u.dispose();return Promise.allSettled([d.flush(),f.flush(),p(),m()])})",
+      "codexLinuxRunQuitCleanup(()=>Promise.resolve())",
+    ),
+  ];
+  const descriptor = corePatchDescriptors().find(
+    (candidate) => candidate.id === "linux-explicit-quit-drain-timeout",
+  );
+
+  for (const source of sources) {
+    const report = createPatchReport();
+    const { value: result, warnings } = captureWarns(() =>
+      applyMainBundlePatchDescriptors(source, [descriptor], {}, report),
+    );
+
+    assert.equal(result.patchedSource, source);
+    assert.deepEqual(warnings, [
+      "WARN: Could not uniquely match current will-quit drain sequence — skipping Linux explicit quit drain timeout patch",
+    ]);
+    assert.equal(report.patches[0]?.status, "failed-required");
+    assert.equal(report.patches[0]?.reason, warnings[0]);
+  }
+});
+
 test("a non-exiting Linux finalizer is not accepted as already applied", () => {
   const previousBrokenPatch = applyLinuxWillQuitDrainTimeoutPatch(
     willQuitDrainBundleFixture(),
