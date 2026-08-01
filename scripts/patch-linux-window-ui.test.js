@@ -3053,11 +3053,11 @@ test("does not accept damaged Linux quit cleanup factory bodies", () => {
   const sources = [
     patched.replace(
       "codexLinuxRunQuitCleanup(()=>{c.dispose(),u.dispose();return Promise.allSettled([p(),m()])})",
-      "codexLinuxRunQuitCleanup(()=>Promise.resolve())",
+      "codexLinuxRunQuitCleanup(()=>{return Promise.resolve()})",
     ),
     patched.replace(
       "codexLinuxRunQuitCleanup(()=>{c.dispose(),u.dispose();return Promise.allSettled([d.flush(),f.flush(),p(),m()])})",
-      "codexLinuxRunQuitCleanup(()=>Promise.resolve())",
+      "codexLinuxRunQuitCleanup(()=>{return Promise.resolve()})",
     ),
   ];
   const descriptor = corePatchDescriptors().find(
