@@ -1111,6 +1111,25 @@ write_chrome_native_host_launcher() {
         '    *) exit 1 ;;' \
         'esac' \
         'host_path="$cache_root/latest/extension-host/linux/$extension_arch/extension-host"' \
+        'codex_home="$(cd -- "$cache_root/../../../.." && pwd -P)"' \
+        'installed_cache_root="$codex_home/plugins/cache/openai-bundled/chrome"' \
+        'installed_plugin="$(readlink -f -- "$installed_cache_root/latest" 2>/dev/null || true)"' \
+        'case "$installed_plugin" in' \
+        '    "$installed_cache_root"/*)' \
+        '        installed_host="$installed_plugin/extension-host/linux/$extension_arch/extension-host"' \
+        '        installed_trusted=1' \
+        '        for trusted_path in "$codex_home" "$codex_home/plugins" "$codex_home/plugins/cache" "$codex_home/plugins/cache/openai-bundled" "$installed_cache_root" "$installed_plugin"; do' \
+        '            [ -d "$trusted_path" ] && [ ! -L "$trusted_path" ] || { installed_trusted=0; break; }' \
+        '            if find "$trusted_path" -maxdepth 0 -perm /022 -print -quit 2>/dev/null | grep -q .; then' \
+        '                installed_trusted=0' \
+        '                break' \
+        '            fi' \
+        '        done' \
+        '        if [ "$installed_trusted" -eq 1 ] && [ -x "$installed_host" ] && ! find "$installed_plugin" -xdev \( -type l -o -perm /022 \) -print -quit 2>/dev/null | grep -q .; then' \
+        '            host_path="$installed_host"' \
+        '        fi' \
+        '        ;;' \
+        'esac' \
         'exec "$host_path" "$@"' > "$tmp_path"; then
         rm -f -- "$tmp_path"
         return 1
@@ -1224,6 +1243,8 @@ sync_chrome_bundled_plugin_cache() {
     local marketplace_plugins_dir
     local marketplace_plugin_link
     local host_path
+    local official_cache_root
+    local official_cache_plugin
     local needs_copy=1
     local cache_was_untrusted=0
 
@@ -1352,6 +1373,26 @@ sync_chrome_bundled_plugin_cache() {
         return 0
     fi
     replace_symlink "$version" "$cache_root/latest"
+
+    # app-server records the extension host from its official install cache in
+    # chrome-native-hosts-v2.json. Keep that existing cache trusted so the
+    # native-host launcher can execute the same inode as the recorded entry.
+    official_cache_root="$codex_home/plugins/cache/openai-bundled/chrome"
+    official_cache_plugin="$(readlink -f -- "$official_cache_root/latest" 2>/dev/null || true)"
+    case "$official_cache_plugin" in
+        "$official_cache_root"/*)
+            if ! make_path_owner_trusted \
+                "$codex_home" \
+                "$codex_home/plugins" \
+                "$codex_home/plugins/cache" \
+                "$codex_home/plugins/cache/openai-bundled" \
+                "$official_cache_root" \
+                "$official_cache_plugin" || \
+                ! make_tree_owner_trusted "$official_cache_plugin"; then
+                echo "Installed Chrome plugin cache could not be hardened; native host will use the Linux fallback runtime."
+            fi
+            ;;
+    esac
 
     marketplace_root="$codex_home/.tmp/bundled-marketplaces/openai-bundled"
     marketplace_plugins_dir="$marketplace_root/.agents/plugins"

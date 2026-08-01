@@ -6520,6 +6520,7 @@ for (const required of [
   'cache_was_untrusted=1',
   'make_tree_owner_trusted "$tmp_plugin"',
   'make_tree_owner_trusted "$cache_plugin"',
+  'make_tree_owner_trusted "$official_cache_plugin"',
   'write_chrome_native_host_manifests "$host_path" "$cache_root/latest"',
 ]) {
   if (!chromeBody.includes(required)) {
@@ -6649,6 +6650,25 @@ chmod 775 "$CODEX_HOME" "$CODEX_HOME/plugins" \
 chmod 664 "$cache_plugin/scripts/node_modules/classic-level.mjs"
 chmod -R go-w "$SCRIPT_DIR"
 
+official_cache="$CODEX_HOME/plugins/cache/openai-bundled/chrome"
+official_plugin="$official_cache/26.test"
+official_host="$official_plugin/extension-host/linux/x64/extension-host"
+mkdir -p "$(dirname "$official_host")"
+cat > "$official_host" <<'HOST'
+#!/usr/bin/env bash
+printf '%s\n' OFFICIAL
+HOST
+chmod 0755 "$official_host"
+ln -s 26.test "$official_cache/latest"
+chmod 0775 \
+  "$CODEX_HOME/plugins/cache" \
+  "$CODEX_HOME/plugins/cache/openai-bundled" \
+  "$official_cache" \
+  "$official_plugin" \
+  "$official_plugin/extension-host" \
+  "$official_plugin/extension-host/linux" \
+  "$official_plugin/extension-host/linux/x64"
+
 sync_chrome_bundled_plugin_cache
 
 grep -qx trusted-module "$cache_plugin/scripts/node_modules/classic-level.mjs"
@@ -6667,6 +6687,20 @@ if find "$cache_plugin" ! -type l -perm /022 -print -quit | grep -q .; then
   echo "Chrome plugin cache remained group/world writable" >&2
   exit 1
 fi
+for trusted_path in \
+  "$CODEX_HOME/plugins/cache" \
+  "$CODEX_HOME/plugins/cache/openai-bundled" \
+  "$official_cache" \
+  "$official_plugin"; do
+  if find "$trusted_path" -maxdepth 0 ! -type l -perm /022 -print -quit | grep -q .; then
+    echo "Installed Chrome cache remained group/world writable: $trusted_path" >&2
+    exit 1
+  fi
+done
+if find "$official_plugin" ! -type l -perm /022 -print -quit | grep -q .; then
+  echo "Installed Chrome plugin tree remained group/world writable" >&2
+  exit 1
+fi
 test -L "$cache_root/latest"
 test "$(readlink "$cache_root/latest")" = 26.test
 marketplace_plugin="$CODEX_HOME/.tmp/bundled-marketplaces/openai-bundled/plugins/chrome"
@@ -6675,8 +6709,6 @@ test "$(readlink "$marketplace_plugin")" = "$cache_root/latest"
 
 # app-server owns and replaces the official install cache. That operation
 # must not consume the Linux marketplace source or native-host runtime.
-official_cache="$CODEX_HOME/plugins/cache/openai-bundled/chrome"
-mkdir -p "$official_cache"
 printf '%s\n' stale > "$official_cache/stale"
 rm -rf "$official_cache"
 test -f "$marketplace_plugin/.codex-plugin/plugin.json"
@@ -6897,6 +6929,22 @@ proxy_output="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
   PATH="$no_setsid_bin" "$native_host_path")"
 test "$proxy_output" = 'ARCH=x64'
 test ! -e "$probe_called_file"
+
+# Once app-server has installed and registered its cache, the wrapper must
+# execute that exact host instead of the Linux fallback copy. The v2 manifest
+# identifies the executable by inode.
+official_plugin="$CODEX_HOME/plugins/cache/openai-bundled/chrome/26.test"
+official_host="$official_plugin/extension-host/linux/x64/extension-host"
+mkdir -p "$(dirname "$official_host")"
+cat > "$official_host" <<'HOST'
+#!/usr/bin/env bash
+printf '%s\n' OFFICIAL
+HOST
+chmod 0755 "$official_host"
+ln -s 26.test "$CODEX_HOME/plugins/cache/openai-bundled/chrome/latest"
+chmod -R go-w "$CODEX_HOME/plugins/cache"
+official_output="$(STUB_UNAME_MACHINE=x86_64 PATH="$stub_bin:$PATH" "$native_host_path")"
+test "$official_output" = OFFICIAL
 '''
 )
 PY
