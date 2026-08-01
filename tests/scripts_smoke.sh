@@ -6520,7 +6520,6 @@ for (const required of [
   'cache_was_untrusted=1',
   'make_tree_owner_trusted "$tmp_plugin"',
   'make_tree_owner_trusted "$cache_plugin"',
-  'make_tree_owner_trusted "$official_cache_plugin"',
   'write_chrome_native_host_manifests "$host_path" "$cache_root/latest"',
 ]) {
   if (!chromeBody.includes(required)) {
@@ -6687,18 +6686,8 @@ if find "$cache_plugin" ! -type l -perm /022 -print -quit | grep -q .; then
   echo "Chrome plugin cache remained group/world writable" >&2
   exit 1
 fi
-for trusted_path in \
-  "$CODEX_HOME/plugins/cache" \
-  "$CODEX_HOME/plugins/cache/openai-bundled" \
-  "$official_cache" \
-  "$official_plugin"; do
-  if find "$trusted_path" -maxdepth 0 ! -type l -perm /022 -print -quit | grep -q .; then
-    echo "Installed Chrome cache remained group/world writable: $trusted_path" >&2
-    exit 1
-  fi
-done
-if find "$official_plugin" ! -type l -perm /022 -print -quit | grep -q .; then
-  echo "Installed Chrome plugin tree remained group/world writable" >&2
+if ! find "$official_plugin" -maxdepth 0 -perm /022 -print -quit | grep -q .; then
+  echo "Launcher unexpectedly blessed the app-server-owned Chrome cache" >&2
   exit 1
 fi
 test -L "$cache_root/latest"
@@ -6930,9 +6919,8 @@ proxy_output="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 test "$proxy_output" = 'ARCH=x64'
 test ! -e "$probe_called_file"
 
-# Once app-server has installed and registered its cache, the wrapper must
-# execute that exact host instead of the Linux fallback copy. The v2 manifest
-# identifies the executable by inode.
+# The app-server registry is patched to reference the trusted Linux runtime
+# cache. An installed-cache executable must never override the wrapper target.
 official_plugin="$CODEX_HOME/plugins/cache/openai-bundled/chrome/26.test"
 official_host="$official_plugin/extension-host/linux/x64/extension-host"
 mkdir -p "$(dirname "$official_host")"
@@ -6944,7 +6932,7 @@ chmod 0755 "$official_host"
 ln -s 26.test "$CODEX_HOME/plugins/cache/openai-bundled/chrome/latest"
 chmod -R go-w "$CODEX_HOME/plugins/cache"
 official_output="$(STUB_UNAME_MACHINE=x86_64 PATH="$stub_bin:$PATH" "$native_host_path")"
-test "$official_output" = OFFICIAL
+test "$official_output" = 'ARCH=x64'
 '''
 )
 PY
