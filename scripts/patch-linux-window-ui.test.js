@@ -2709,7 +2709,7 @@ test("adds a bounded will-quit drain fallback on Linux", () => {
   assert.doesNotMatch(patched, /codexLinuxQuitFinalized/);
   assert.match(
     patched,
-    /Promise\.resolve\(\)\.then\(\(\)=>U5\(h,N5\)\)\.catch\(e=>\{try\{console\.warn\(`WARN: Linux quit context cleanup failed`,e\)\}catch\{\}\}\)/,
+    /\.then\(\(\)=>Promise\.resolve\(\)\.then\(\(\)=>U5\(h,N5\)\)\.catch\(e=>\{try\{console\.warn\(`WARN: Linux quit context cleanup failed`,e\)\}catch\{\}\}\)\)/,
   );
   assert.match(
     patched,
@@ -2717,14 +2717,14 @@ test("adds a bounded will-quit drain fallback on Linux", () => {
   );
   assert.match(
     patched,
-    /Promise\.race\(\[Promise\.resolve\(\)\.then\(e\)\.then\(codexLinuxLogQuitDrainResults\),new Promise\(\(_,e\)=>setTimeout\(\(\)=>e\(Error\(`Linux quit drain timed out`\)\),typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`\?codexLinuxExplicitQuitDrainTimeoutMs:3e3\)\)\]\)\.catch\(e=>\{try\{console\.warn\(`WARN: Linux quit drain cleanup failed`,e\)\}catch\{\}\}\)\.then\(codexLinuxFinalizeQuit\)/,
+    /Promise\.race\(\[Promise\.resolve\(\)\.then\(e\)[^;]+new Promise\(\(_,e\)=>setTimeout\(\(\)=>e\(Error\(`Linux quit cleanup timed out`\)\),typeof codexLinuxExplicitQuitDrainTimeoutMs===`number`\?codexLinuxExplicitQuitDrainTimeoutMs:3e3\)\)\]\)\.catch\(e=>\{try\{console\.warn\(`WARN: Linux quit cleanup failed`,e\)\}catch\{\}\}\)\.then\(codexLinuxFinalizeQuit\)/,
   );
   assert.match(
     patched,
-    /codexLinuxRunQuitDrain=e=>\{if\(process\.platform===`linux`\)\{/,
+    /codexLinuxRunQuitCleanup=e=>\{if\(process\.platform===`linux`\)\{/,
   );
   assert.equal(
-    (patched.match(/codexLinuxRunQuitDrain\(\(\)=>\{/g) ?? []).length,
+    (patched.match(/codexLinuxRunQuitCleanup\(\(\)=>\{/g) ?? []).length,
     2,
   );
   assert.equal(
@@ -2768,12 +2768,27 @@ test("Linux will-quit reaches app.exit after the drain deadline", async () => {
   assert.deepEqual(state.exitCodes, [0]);
   assert.equal(state.quitCalls, 0);
   assert.deepEqual(state.warnings, [
-    "WARN: Linux quit drain cleanup failed Error: Linux quit drain timed out",
+    "WARN: Linux quit cleanup failed Error: Linux quit cleanup timed out",
   ]);
   resolveGlobalState();
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(state.exitCalls, 1);
   assert.equal(state.quitCalls, 0);
+});
+
+test("Linux will-quit bounds context disposal inside the quit deadline", async () => {
+  const stalledContextDispose = new Promise(() => {});
+  const state = await runPatchedLinuxWillQuit({
+    contextDispose: () => stalledContextDispose,
+    timeoutMs: 5,
+  });
+
+  assert.equal(state.exitCalls, 1);
+  assert.deepEqual(state.exitCodes, [0]);
+  assert.equal(state.quitCalls, 0);
+  assert.deepEqual(state.warnings, [
+    "WARN: Linux quit cleanup failed Error: Linux quit cleanup timed out",
+  ]);
 });
 
 test("Linux will-quit logs rejected asynchronous drain work before exit", async () => {
@@ -2929,6 +2944,23 @@ test("missing, renamed, or ambiguous will-quit targets fail the required lifecyc
     assert.equal(report.patches[0]?.status, "failed-required");
     assert.equal(report.patches[0]?.reason, warnings[0]);
   }
+});
+
+test("recognizes the bounded Linux quit cleanup as already applied", () => {
+  const source = applyLinuxWillQuitDrainTimeoutPatch(
+    willQuitDrainBundleFixture(),
+  );
+  const descriptor = corePatchDescriptors().find(
+    (candidate) => candidate.id === "linux-explicit-quit-drain-timeout",
+  );
+  const report = createPatchReport();
+  const { value: result, warnings } = captureWarns(() =>
+    applyMainBundlePatchDescriptors(source, [descriptor], {}, report),
+  );
+
+  assert.equal(result.patchedSource, source);
+  assert.deepEqual(warnings, []);
+  assert.equal(report.patches[0]?.status, "already-applied");
 });
 
 test("a non-exiting Linux finalizer is not accepted as already applied", () => {

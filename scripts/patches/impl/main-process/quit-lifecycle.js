@@ -117,15 +117,16 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
   const appliedMarkers = [
     "codexLinuxLogQuitDrainResults=e=>{",
     "codexLinuxFinalizeQuit=()=>{",
-    "codexLinuxRunQuitDrain=e=>{if(process.platform===`linux`){Promise.race([Promise.resolve().then(e)",
-    "Linux quit drain timed out",
+    "codexLinuxRunQuitCleanup=e=>{if(process.platform===`linux`){Promise.race([Promise.resolve().then(e)",
+    "Linux quit cleanup timed out",
     "WARN: Linux quit drain cleanup failed",
     "WARN: Linux quit context cleanup failed",
+    "WARN: Linux quit cleanup failed",
     "WARN: Linux quit disposables cleanup failed",
   ];
   const appliedFinalizerStart = currentSource.indexOf(appliedMarkers[0]);
   const appliedFinalizerEnd = currentSource.indexOf(
-    ",codexLinuxRunQuitDrain=",
+    ",codexLinuxRunQuitCleanup=",
     appliedFinalizerStart,
   );
   const hasAppliedFinalizerPostcondition =
@@ -151,18 +152,18 @@ function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
   const { outer, finalizer, reduced, full } = candidate.shape;
   const originalFinalizer = `${outer.upstreamFinalize}=()=>{${outer.finalizer}}`;
   const linuxFinalizer =
-    `codexLinuxLogQuitDrainResults=e=>{for(let t of e)if(t.status===\`rejected\`)try{console.warn(\`WARN: Linux quit drain cleanup failed\`,t.reason)}catch{};return e},codexLinuxFinalizeQuit=()=>{Promise.resolve().then(()=>${finalizer.contextDispose}(${finalizer.contextArg},${finalizer.contextTimeout})).catch(e=>{try{console.warn(\`WARN: Linux quit context cleanup failed\`,e)}catch{}}).then(()=>{try{${finalizer.disposables}.dispose()}catch(e){try{console.warn(\`WARN: Linux quit disposables cleanup failed\`,e)}catch{}}finally{${finalizer.electron}.app.exit(0)}})},codexLinuxRunQuitDrain=e=>{if(${linuxQuitDrainGuard}){Promise.race([Promise.resolve().then(e).then(codexLinuxLogQuitDrainResults),new Promise((_,e)=>setTimeout(()=>e(Error(\`Linux quit drain timed out\`)),typeof codexLinuxExplicitQuitDrainTimeoutMs===\`number\`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).catch(e=>{try{console.warn(\`WARN: Linux quit drain cleanup failed\`,e)}catch{}}).then(codexLinuxFinalizeQuit);return}e().then(${outer.upstreamFinalize})}`;
+    `codexLinuxLogQuitDrainResults=e=>{for(let t of e)if(t.status===\`rejected\`)try{console.warn(\`WARN: Linux quit drain cleanup failed\`,t.reason)}catch{};return e},codexLinuxFinalizeQuit=()=>{try{${finalizer.disposables}.dispose()}catch(e){try{console.warn(\`WARN: Linux quit disposables cleanup failed\`,e)}catch{}}finally{${finalizer.electron}.app.exit(0)}},codexLinuxRunQuitCleanup=e=>{if(${linuxQuitDrainGuard}){Promise.race([Promise.resolve().then(e).then(codexLinuxLogQuitDrainResults).catch(e=>{try{console.warn(\`WARN: Linux quit drain cleanup failed\`,e)}catch{}}).then(()=>Promise.resolve().then(()=>${finalizer.contextDispose}(${finalizer.contextArg},${finalizer.contextTimeout})).catch(e=>{try{console.warn(\`WARN: Linux quit context cleanup failed\`,e)}catch{}})),new Promise((_,e)=>setTimeout(()=>e(Error(\`Linux quit cleanup timed out\`)),typeof codexLinuxExplicitQuitDrainTimeoutMs===\`number\`?codexLinuxExplicitQuitDrainTimeoutMs:3e3))]).catch(e=>{try{console.warn(\`WARN: Linux quit cleanup failed\`,e)}catch{}}).then(codexLinuxFinalizeQuit);return}e().then(${outer.upstreamFinalize})}`;
   let patchedBody = candidate.body.replace(
     `let ${originalFinalizer};`,
     `let ${originalFinalizer},${linuxFinalizer};`,
   );
   patchedBody = patchedBody.replace(
     `${reduced.hotkey}.dispose(),${reduced.dictation}.dispose(),Promise.allSettled([${reduced.stop}(),${reduced.trace}()]).then(${outer.upstreamFinalize})`,
-    `codexLinuxRunQuitDrain(()=>{${reduced.hotkey}.dispose(),${reduced.dictation}.dispose();return Promise.allSettled([${reduced.stop}(),${reduced.trace}()])})`,
+    `codexLinuxRunQuitCleanup(()=>{${reduced.hotkey}.dispose(),${reduced.dictation}.dispose();return Promise.allSettled([${reduced.stop}(),${reduced.trace}()])})`,
   );
   patchedBody = patchedBody.replace(
     `${full.hotkey}.dispose(),${full.dictation}.dispose(),Promise.allSettled([${full.globalState}.flush(),${full.settings}.flush(),${full.stop}(),${full.trace}()]).then(${outer.upstreamFinalize})`,
-    `codexLinuxRunQuitDrain(()=>{${full.hotkey}.dispose(),${full.dictation}.dispose();return Promise.allSettled([${full.globalState}.flush(),${full.settings}.flush(),${full.stop}(),${full.trace}()])})`,
+    `codexLinuxRunQuitCleanup(()=>{${full.hotkey}.dispose(),${full.dictation}.dispose();return Promise.allSettled([${full.globalState}.flush(),${full.settings}.flush(),${full.stop}(),${full.trace}()])})`,
   );
 
   return `${currentSource.slice(0, candidate.openBrace + 1)}${patchedBody}${currentSource.slice(candidate.closeBrace)}`;

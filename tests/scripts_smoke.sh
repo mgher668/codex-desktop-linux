@@ -9221,13 +9221,15 @@ JS
     assert_not_contains "$extracted/.vite/build/main-test.js" 'codexLinuxQuitFinalized'
     assert_contains "$extracted/.vite/build/main-test.js" 'WARN: Linux quit drain cleanup failed'
     assert_contains "$extracted/.vite/build/main-test.js" 'WARN: Linux quit context cleanup failed'
+    assert_contains "$extracted/.vite/build/main-test.js" 'WARN: Linux quit cleanup failed'
     assert_contains "$extracted/.vite/build/main-test.js" 'WARN: Linux quit disposables cleanup failed'
     assert_contains "$extracted/.vite/build/main-test.js" 'finally{l.app.exit(0)}'
     assert_not_contains "$extracted/.vite/build/main-test.js" 'finally{l.app.quit()}'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxRunQuitDrain(()=>{' '2'
-    assert_contains "$extracted/.vite/build/main-test.js" 'Promise.resolve().then(e).then(codexLinuxLogQuitDrainResults),new Promise'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxRunQuitCleanup(()=>{' '2'
+    assert_contains "$extracted/.vite/build/main-test.js" 'Promise.resolve().then(e).then(codexLinuxLogQuitDrainResults).catch'
+    assert_contains "$extracted/.vite/build/main-test.js" '.then(()=>Promise.resolve().then(()=>U5(h,N5)).catch'
     assert_contains "$extracted/.vite/build/main-test.js" 'codexLinuxExplicitQuitDrainTimeoutMs'
-    assert_contains "$extracted/.vite/build/main-test.js" 'setTimeout(()=>e(Error(`Linux quit drain timed out`)),typeof codexLinuxExplicitQuitDrainTimeoutMs'
+    assert_contains "$extracted/.vite/build/main-test.js" 'setTimeout(()=>e(Error(`Linux quit cleanup timed out`)),typeof codexLinuxExplicitQuitDrainTimeoutMs'
     assert_not_contains "$extracted/.vite/build/main-test.js" '\`number\`'
     assert_not_contains "$output_log" 'WARN: Could not find tray quit menu handler'
     assert_not_contains "$output_log" 'WARN: Could not find quit-app IPC handler'
@@ -9333,7 +9335,7 @@ NODE
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'typeof codexLinuxShouldBypassQuitPrompt===`function`&&codexLinuxShouldBypassQuitPrompt()' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxLogQuitDrainResults=e=>{' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxFinalizeQuit=()=>{' '1'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxRunQuitDrain(()=>{' '2'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'codexLinuxRunQuitCleanup(()=>{' '2'
 }
 
 test_keybinds_settings_tab_patch_smoke() {
