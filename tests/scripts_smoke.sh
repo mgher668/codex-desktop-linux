@@ -6931,7 +6931,9 @@ HOST
 chmod 0755 "$official_host"
 ln -s 26.test "$CODEX_HOME/plugins/cache/openai-bundled/chrome/latest"
 chmod -R go-w "$CODEX_HOME/plugins/cache"
-official_output="$(STUB_UNAME_MACHINE=x86_64 PATH="$stub_bin:$PATH" "$native_host_path")"
+official_output="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+  -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy \
+  PATH="$no_setsid_bin" "$native_host_path")"
 test "$official_output" = 'ARCH=x64'
 '''
 )
