@@ -103,6 +103,7 @@ function createChromeRuntimeCaches(root) {
     path.join(runtimeScripts, "extension-ids.json"),
     `${JSON.stringify({ extensionIds: [CHROME_EXTENSION_ID] })}\n`,
   );
+  fs.writeFileSync(path.join(runtimeScripts, "browser-client.mjs"), "TRUSTED_BROWSER_CLIENT\n");
   fs.symlinkSync("26.test", path.join(runtimeRoot, "latest"));
 
   for (const target of [
@@ -121,11 +122,14 @@ function createChromeRuntimeCaches(root) {
   }
   fs.chmodSync(runtimeHost, 0o755);
   fs.chmodSync(path.join(runtimeScripts, "extension-ids.json"), 0o644);
+  fs.chmodSync(path.join(runtimeScripts, "browser-client.mjs"), 0o644);
 
   return {
     codexHome,
     installedHost,
     installedLatest: path.join(installedRoot, "latest"),
+    installedRoot,
+    installedVersion,
     runtimeHost,
     runtimeLatest: path.join(runtimeRoot, "latest"),
     runtimeVersion,
@@ -139,6 +143,7 @@ function registerChromeRuntime(patched, fixture, geteuid = () => process.geteuid
       process: {
         geteuid,
         platform: "linux",
+        arch: process.arch,
       },
       require,
     },
@@ -221,9 +226,34 @@ test("registers the trusted Linux runtime cache instead of the installed cache",
     const patched = applyLinuxChromeNativeHostRuntimePatch(
       currentChromePluginAppServerSourceBundleFixture(),
     );
+    const bridgeRoot = path.join(fixture.installedRoot, ".codex-linux-runtime");
+    fs.symlinkSync(fixture.installedHost, bridgeRoot);
     const result = await registerChromeRuntime(patched, fixture);
 
-    assert.equal(result.extensionHostPath, fixture.runtimeLatest);
+    const bridgeHost = path.join(
+      bridgeRoot,
+      "extension-host",
+      "linux",
+      "x64",
+      "extension-host",
+    );
+    assert.equal(result.extensionHostPath, bridgeHost);
+    assert.equal(
+      result.browserClientPath,
+      path.join(bridgeRoot, "scripts", "browser-client.mjs"),
+    );
+    assert.equal(fs.realpathSync(bridgeRoot), fixture.runtimeVersion);
+    assert.equal(fs.statSync(fixture.installedRoot).mode & 0o022, 0);
+    assert.deepEqual(
+      {
+        dev: fs.statSync(bridgeHost).dev,
+        ino: fs.statSync(bridgeHost).ino,
+      },
+      {
+        dev: fs.statSync(fixture.runtimeHost).dev,
+        ino: fs.statSync(fixture.runtimeHost).ino,
+      },
+    );
     assert.deepEqual(
       JSON.parse(JSON.stringify(result.extensionIds)),
       [CHROME_EXTENSION_ID],
