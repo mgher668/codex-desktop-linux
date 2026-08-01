@@ -141,9 +141,25 @@ function hasAppliedWillQuitCleanupPostcondition(currentSource, appliedFinalizerS
   }
 
   const handlerBody = currentSource.slice(openBrace + 1, closeBrace);
-  return (
-    handlerBody.match(/codexLinuxRunQuitCleanup\(\(\)=>\{/g) ?? []
-  ).length === 2;
+  const reducedBranchStart = handlerBody.indexOf(
+    ".shouldSkipDrainBeforeQuit()){",
+  );
+  const reducedBranchEnd = handlerBody.indexOf(
+    ";return}",
+    reducedBranchStart,
+  );
+  if (reducedBranchStart === -1 || reducedBranchEnd === -1) {
+    return false;
+  }
+
+  const cleanupCall = /codexLinuxRunQuitCleanup\(\(\)=>\{/g;
+  const reducedCalls =
+    handlerBody
+      .slice(reducedBranchStart, reducedBranchEnd)
+      .match(cleanupCall)?.length ?? 0;
+  const fullCalls =
+    handlerBody.slice(reducedBranchEnd + 8).match(cleanupCall)?.length ?? 0;
+  return reducedCalls === 1 && fullCalls === 1;
 }
 
 function applyLinuxWillQuitDrainTimeoutPatch(currentSource) {
