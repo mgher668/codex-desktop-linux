@@ -6513,6 +6513,7 @@ assertCacheLinks({
 const chromeBody = functionBody("sync_chrome_bundled_plugin_cache", "sync_computer_use_bundled_plugin_cache");
 for (const required of [
   'make_path_owner_trusted',
+  'cache_root="$codex_home/plugins/linux-runtime-cache/openai-bundled/chrome"',
   'path_has_unsafe_write',
   'tree_has_unsafe_write "$cache_plugin"',
   'cache_was_untrusted=1',
@@ -6587,7 +6588,7 @@ SCRIPT_DIR="$root/app"
 HOME="$root/home"
 CODEX_HOME="$HOME/.codex"
 source_plugin="$SCRIPT_DIR/resources/plugins/openai-bundled/plugins/chrome"
-cache_root="$CODEX_HOME/plugins/cache/openai-bundled/chrome"
+cache_root="$CODEX_HOME/plugins/linux-runtime-cache/openai-bundled/chrome"
 cache_plugin="$cache_root/26.test"
 
 bundled_plugin_version() { printf '%s\n' 26.test; }
@@ -6640,8 +6641,10 @@ chmod 0755 "$cache_root/native-host"
 # Simulate a cache and relevant ancestor created under umask 0002. The four
 # files used by the old partial comparison still match, while an imported
 # module that was not compared has been changed.
-chmod 775 "$CODEX_HOME" "$CODEX_HOME/plugins" "$CODEX_HOME/plugins/cache" \
-  "$CODEX_HOME/plugins/cache/openai-bundled" "$cache_root" "$cache_plugin"
+chmod 775 "$CODEX_HOME" "$CODEX_HOME/plugins" \
+  "$CODEX_HOME/plugins/linux-runtime-cache" \
+  "$CODEX_HOME/plugins/linux-runtime-cache/openai-bundled" \
+  "$cache_root" "$cache_plugin"
 chmod 664 "$cache_plugin/scripts/node_modules/classic-level.mjs"
 chmod -R go-w "$SCRIPT_DIR"
 
@@ -6651,8 +6654,8 @@ grep -qx trusted-module "$cache_plugin/scripts/node_modules/classic-level.mjs"
 for trusted_path in \
   "$CODEX_HOME" \
   "$CODEX_HOME/plugins" \
-  "$CODEX_HOME/plugins/cache" \
-  "$CODEX_HOME/plugins/cache/openai-bundled" \
+  "$CODEX_HOME/plugins/linux-runtime-cache" \
+  "$CODEX_HOME/plugins/linux-runtime-cache/openai-bundled" \
   "$cache_root"; do
   if find "$trusted_path" -maxdepth 0 ! -type l -perm /022 -print -quit | grep -q .; then
     echo "Chrome cache ancestor remained group/world writable: $trusted_path" >&2
@@ -6665,6 +6668,18 @@ if find "$cache_plugin" ! -type l -perm /022 -print -quit | grep -q .; then
 fi
 test -L "$cache_root/latest"
 test "$(readlink "$cache_root/latest")" = 26.test
+marketplace_plugin="$CODEX_HOME/.tmp/bundled-marketplaces/openai-bundled/plugins/chrome"
+test -L "$marketplace_plugin"
+test "$(readlink "$marketplace_plugin")" = "$cache_root/latest"
+
+# app-server owns and replaces the official install cache. That operation
+# must not consume the Linux marketplace source or native-host runtime.
+official_cache="$CODEX_HOME/plugins/cache/openai-bundled/chrome"
+mkdir -p "$official_cache"
+printf '%s\n' stale > "$official_cache/stale"
+rm -rf "$official_cache"
+test -f "$marketplace_plugin/.codex-plugin/plugin.json"
+test -x "$cache_root/native-host"
 grep -qx untouched "$root/predictable-temp-target"
 if grep -q PRESEEDED_PAYLOAD "$cache_root/native-host"; then
   echo "Chrome native host launcher retained a pre-seeded executable" >&2

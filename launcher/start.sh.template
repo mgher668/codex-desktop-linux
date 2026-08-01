@@ -1262,7 +1262,12 @@ sync_chrome_bundled_plugin_cache() {
     version="$(bundled_plugin_version "$plugin_json" 2>/dev/null || true)"
     [ -n "$version" ] || return 0
 
-    cache_root="$codex_home/plugins/cache/openai-bundled/chrome"
+    # Keep the Linux native-host/runtime copy outside app-server's managed
+    # plugin cache. plugin/install replaces
+    # $CODEX_HOME/plugins/cache/openai-bundled/chrome and would otherwise
+    # remove both the marketplace source link and the native-host launcher
+    # while the renderer is still finishing the install.
+    cache_root="$codex_home/plugins/linux-runtime-cache/openai-bundled/chrome"
     cache_plugin="$cache_root/$version"
     cache_host="$cache_plugin/extension-host/linux/$extension_arch/extension-host"
     cache_client="$cache_plugin/scripts/browser-client.mjs"
@@ -1271,8 +1276,8 @@ sync_chrome_bundled_plugin_cache() {
     if path_has_unsafe_write \
         "$codex_home" \
         "$codex_home/plugins" \
-        "$codex_home/plugins/cache" \
-        "$codex_home/plugins/cache/openai-bundled" \
+        "$codex_home/plugins/linux-runtime-cache" \
+        "$codex_home/plugins/linux-runtime-cache/openai-bundled" \
         "$cache_root" || tree_has_unsafe_write "$cache_plugin"; then
         cache_was_untrusted=1
     fi
@@ -1280,8 +1285,8 @@ sync_chrome_bundled_plugin_cache() {
     if ! make_path_owner_trusted \
         "$codex_home" \
         "$codex_home/plugins" \
-        "$codex_home/plugins/cache" \
-        "$codex_home/plugins/cache/openai-bundled" \
+        "$codex_home/plugins/linux-runtime-cache" \
+        "$codex_home/plugins/linux-runtime-cache/openai-bundled" \
         "$cache_root"; then
         echo "Chrome plugin cache ancestors could not be hardened; skipping cache and native-host manifest sync."
         return 0
@@ -1324,8 +1329,8 @@ sync_chrome_bundled_plugin_cache() {
         if ! make_path_owner_trusted \
             "$codex_home" \
             "$codex_home/plugins" \
-            "$codex_home/plugins/cache" \
-            "$codex_home/plugins/cache/openai-bundled" \
+            "$codex_home/plugins/linux-runtime-cache" \
+            "$codex_home/plugins/linux-runtime-cache/openai-bundled" \
             "$cache_root" \
             "$cache_parent"; then
             echo "Chrome plugin cache parent could not be hardened; skipping cache and native-host manifest sync."
