@@ -77,6 +77,7 @@ test("patches the complete current Chrome runtime asset set transactionally", as
       /codexLinuxChromeNativeHostRuntimeEnv\(`CODEX_CLI_PATH`\)/,
     );
     assert.match(srcPatched, /codexLinuxChromePluginAppServerSourcePath/);
+    assert.match(srcPatched, /codexLinuxTrustChromePluginCache/);
 
     const files = new Set([
       "/home/josh/.local/bin/codex",
@@ -122,6 +123,54 @@ test("patches the complete current Chrome runtime asset set transactionally", as
     assert.deepEqual(assetSources(candidate), beforeSecondPass);
   } finally {
     fs.rmSync(candidate.extractedDir, { recursive: true, force: true });
+  }
+});
+
+test("hardens the installed Chrome plugin cache before native-host registration", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-chrome-cache-trust-"));
+  try {
+    const codexHome = path.join(root, "codex-home");
+    const cacheRoot = path.join(codexHome, "plugins", "cache", "openai-bundled", "chrome");
+    const versionRoot = path.join(cacheRoot, "26.test");
+    const nestedDir = path.join(versionRoot, "extension-host", "linux", "x64");
+    const hostPath = path.join(nestedDir, "extension-host");
+    fs.mkdirSync(nestedDir, { recursive: true });
+    fs.writeFileSync(hostPath, "host\n");
+    fs.symlinkSync(versionRoot, path.join(cacheRoot, "latest"));
+    for (const target of [
+      codexHome,
+      path.join(codexHome, "plugins"),
+      path.join(codexHome, "plugins", "cache"),
+      path.join(codexHome, "plugins", "cache", "openai-bundled"),
+      cacheRoot,
+      versionRoot,
+      path.join(versionRoot, "extension-host"),
+      path.join(versionRoot, "extension-host", "linux"),
+      nestedDir,
+    ]) {
+      fs.chmodSync(target, 0o775);
+    }
+    fs.chmodSync(hostPath, 0o775);
+
+    const patched = applyLinuxChromeNativeHostRuntimePatch(
+      currentChromePluginAppServerSourceBundleFixture(),
+    );
+    await vm.runInNewContext(
+      `${patched};cq({codexHome:${JSON.stringify(codexHome)},extensionIds:[],nativeHostName:"com.openai.codexextension",pluginRoot:${JSON.stringify(path.join(cacheRoot, "latest"))}});`,
+      {
+        process: {
+          geteuid: () => process.geteuid(),
+          platform: "linux",
+        },
+        require,
+      },
+    );
+
+    for (const target of [codexHome, cacheRoot, versionRoot, nestedDir, hostPath]) {
+      assert.equal(fs.statSync(target).mode & 0o022, 0, target);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
