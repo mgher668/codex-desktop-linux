@@ -58,7 +58,34 @@ resolve_script_dir() {
     cd -P "$(dirname "$source")" && pwd
 }
 
+capture_launched_desktop_entry() {
+    unset CODEX_LINUX_LAUNCHED_DESKTOP_ENTRY
+
+    local desktop_file="${GIO_LAUNCHED_DESKTOP_FILE:-}"
+    local launched_pid="${GIO_LAUNCHED_DESKTOP_FILE_PID:-}"
+    local current_pid="${BASHPID:-$$}"
+    local desktop_file_name
+    local desktop_entry
+
+    [ "$launched_pid" = "$current_pid" ] || return 0
+    case "$desktop_file" in
+        /*) ;;
+        *) return 0 ;;
+    esac
+
+    desktop_file_name="${desktop_file##*/}"
+    case "$desktop_file_name" in
+        *.desktop) desktop_entry="${desktop_file_name%.desktop}" ;;
+        *) return 0 ;;
+    esac
+    [ -n "$desktop_entry" ] || return 0
+
+    CODEX_LINUX_LAUNCHED_DESKTOP_ENTRY="$desktop_entry"
+    export CODEX_LINUX_LAUNCHED_DESKTOP_ENTRY
+}
+
 SCRIPT_DIR="$(resolve_script_dir)"
+capture_launched_desktop_entry
 if [ -z "${CODEX_HOME:-}" ]; then
     if [ -n "${HOME:-}" ]; then
         CODEX_HOME="$HOME/.codex"

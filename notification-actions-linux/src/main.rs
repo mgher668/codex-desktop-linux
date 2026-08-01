@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Write, path::Path};
+use std::{collections::HashMap, io::Write};
 
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
@@ -207,16 +207,9 @@ fn validate_request(request: &ShowRequest) -> Result<()> {
 }
 
 fn launched_desktop_entry_id() -> Option<String> {
-    let desktop_file = std::env::var_os("GIO_LAUNCHED_DESKTOP_FILE")?;
-    desktop_entry_id(Path::new(&desktop_file))
-}
-
-fn desktop_entry_id(desktop_file: &Path) -> Option<String> {
-    desktop_file
-        .file_name()?
-        .to_str()?
-        .strip_suffix(".desktop")
-        .map(str::to_owned)
+    std::env::var("CODEX_LINUX_LAUNCHED_DESKTOP_ENTRY")
+        .ok()
+        .filter(|desktop_entry| !desktop_entry.is_empty())
 }
 
 fn notification_actions(actions: &[String]) -> Vec<String> {
@@ -275,21 +268,6 @@ mod tests {
         assert_eq!(action_index("action-2", 2), None);
         assert_eq!(action_index("default", 2), None);
         assert_eq!(action_index("action-nope", 2), None);
-    }
-
-    #[test]
-    fn derives_desktop_entry_id_from_desktop_file_path() {
-        assert_eq!(
-            desktop_entry_id(Path::new(
-                "/home/user/.local/share/applications/chatgpt.desktop"
-            )),
-            Some("chatgpt".to_owned())
-        );
-        assert_eq!(
-            desktop_entry_id(Path::new("/usr/share/applications/codex-desktop.desktop")),
-            Some("codex-desktop".to_owned())
-        );
-        assert_eq!(desktop_entry_id(Path::new("/tmp/not-a-desktop-file")), None);
     }
 
     #[test]

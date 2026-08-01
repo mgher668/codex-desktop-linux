@@ -4963,6 +4963,30 @@ EOF
     "$BASH_BIN" "$probe" || fail "Expected launcher to preserve all LD_LIBRARY_PATH states"
 }
 
+test_launcher_captures_desktop_entry_for_current_process_only() {
+    info "Checking launcher validates the GIO desktop-entry PID"
+    local probe="$TMP_DIR/launcher-desktop-entry-pid-probe.sh"
+
+    awk '
+        /^capture_launched_desktop_entry\(\) \{/ { capture = 1 }
+        capture { print }
+        capture && /^}/ { exit }
+    ' "$REPO_DIR/launcher/start.sh.template" > "$probe"
+    cat >> "$probe" <<'EOF'
+GIO_LAUNCHED_DESKTOP_FILE=/home/user/.local/share/applications/chatgpt.desktop
+GIO_LAUNCHED_DESKTOP_FILE_PID="$BASHPID"
+capture_launched_desktop_entry
+[ "$CODEX_LINUX_LAUNCHED_DESKTOP_ENTRY" = chatgpt ] || exit 2
+
+GIO_LAUNCHED_DESKTOP_FILE=/usr/share/applications/org.gnome.Terminal.desktop
+GIO_LAUNCHED_DESKTOP_FILE_PID="$((BASHPID + 1))"
+capture_launched_desktop_entry
+[ "${CODEX_LINUX_LAUNCHED_DESKTOP_ENTRY+x}" != x ] || exit 3
+EOF
+
+    "$BASH_BIN" "$probe" || fail "Expected launcher to reject stale GIO desktop-entry metadata"
+}
+
 test_packaged_runtime_keeps_managed_node_out_of_user_service_path() {
     info "Checking packaged runtime exports the user PATH to user services"
     local workspace="$TMP_DIR/packaged-runtime-user-path"
@@ -11209,6 +11233,7 @@ main() {
     test_chrome_native_host_manifest_writer
     test_launcher_managed_node_handles_unset_path
     test_launcher_captures_original_ld_library_path_state
+    test_launcher_captures_desktop_entry_for_current_process_only
     test_packaged_runtime_keeps_managed_node_out_of_user_service_path
     test_launcher_extra_bundled_plugin_cache_rollback
     test_launcher_extra_bundled_plugin_cache_concurrent_destination
