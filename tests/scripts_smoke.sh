@@ -6391,7 +6391,8 @@ EOF
     assert_contains "$REPO_DIR/launcher/start.sh.template" "make_tree_owner_trusted"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "clear_bundled_marketplace_tmp_cache"
     assert_not_contains "$REPO_DIR/launcher/start.sh.template" "monitor_bundled_marketplace_tmp_permissions"
-    assert_contains "$REPO_DIR/launcher/start.sh.template" "extension-id.json"
+    assert_contains "$REPO_DIR/launcher/start.sh.template" "extension-ids.json"
+    assert_not_contains "$REPO_DIR/launcher/start.sh.template" 'scripts_dir / "extension-id.json"'
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
     assert_contains "$REPO_DIR/launcher/start.sh.template" ".config/chromium/NativeMessagingHosts"
     assert_contains "$REPO_DIR/launcher/start.sh.template" "scripts/check-extension-installed.js"
@@ -8495,8 +8496,8 @@ JS
 
 Use the browser bound to `browser` for tasks in this skill.
 MD
-    cat > "$chrome_dir/scripts/extension-id.json" <<'JSON'
-{"extensionId":"hehggadaopoacecdllhhajmbjkdcmajg","extensionHostName":"com.openai.codexextension"}
+    cat > "$chrome_dir/scripts/extension-ids.json" <<'JSON'
+{"extensionIds":["hehggadaopoacecdllhhajmbjkdcmajg"],"extensionHostName":"com.openai.codexextension"}
 JSON
     cat > "$chrome_dir/scripts/browser-client.mjs" <<'JS'
 const browserPreference={};function preferredWindowIdFor(){}function getForUrl(){}const extensionInstanceId=null;
@@ -8784,8 +8785,8 @@ test_chrome_native_host_manifest_writer() {
     mkdir -p "$plugin_dir/scripts" "$home_dir" "$app_dir/.codex-linux" "$(dirname "$host_path")"
     printf '#!/bin/sh\n' > "$host_path"
     chmod +x "$host_path"
-    cat > "$plugin_dir/scripts/extension-id.json" <<'JSON'
-{"extensionId":"abcdefghijklmnopabcdefghijklmnop","extensionHostName":"com.example.codextest"}
+    cat > "$plugin_dir/scripts/extension-ids.json" <<'JSON'
+{"extensionIds":["abcdefghijklmnopabcdefghijklmnop"],"extensionHostName":"com.example.codextest"}
 JSON
     printf '%s\n' ".config/example-browser/NativeMessagingHosts" > "$app_dir/.codex-linux/chrome-native-host-manifest-paths"
 

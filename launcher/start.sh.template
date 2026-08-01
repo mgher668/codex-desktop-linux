@@ -1144,22 +1144,15 @@ scripts_dir = plugin_dir / "scripts"
 extension_id = None
 host_name = None
 
-extension_id_json = scripts_dir / "extension-id.json"
+extension_ids_json = scripts_dir / "extension-ids.json"
 try:
-    data = json.loads(extension_id_json.read_text(encoding="utf-8"))
-    extension_id = data.get("extensionId")
+    data = json.loads(extension_ids_json.read_text(encoding="utf-8"))
+    extension_ids = data.get("extensionIds")
+    if isinstance(extension_ids, list) and extension_ids:
+        extension_id = extension_ids[0]
     host_name = data.get("extensionHostName")
-except OSError:
+except (OSError, json.JSONDecodeError):
     pass
-
-if extension_id is None or host_name is None:
-    install_manifest = (scripts_dir / "installManifest.mjs").read_text(encoding="utf-8")
-    extension_id_match = re.search(r'extensionId\s*:\s*"([a-p]{32})"', install_manifest)
-    host_name_match = re.search(r'extensionHostName\s*:\s*"([A-Za-z0-9_.]+)"', install_manifest)
-    if extension_id is None and extension_id_match is not None:
-        extension_id = extension_id_match.group(1)
-    if host_name is None and host_name_match is not None:
-        host_name = host_name_match.group(1)
 
 if not isinstance(extension_id, str) or re.fullmatch(r"[a-p]{32}", extension_id) is None:
     raise SystemExit("Invalid Chrome extension id in bundled plugin metadata")
@@ -1310,7 +1303,7 @@ sync_chrome_bundled_plugin_cache() {
             scripts/check-extension-installed.js \
             scripts/check-native-host-manifest.js \
             scripts/chrome-is-running.js \
-            scripts/extension-id.json \
+            scripts/extension-ids.json \
             scripts/installed-browsers.js \
             scripts/open-chrome-window.js; do
             [ -f "$source_plugin/$relative" ] || continue
