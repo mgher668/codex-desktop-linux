@@ -8,8 +8,8 @@ use crate::gnome_extension::{setup_window_targeting_report, WindowTargetingSetup
 use crate::remote_desktop::{
     click as portal_click, drag as portal_drag, keysyms_for_text, press_keycode_chord,
     scroll as portal_scroll, start_portal_keyboard_session, start_portal_pointer_session,
-    type_text_with_keysyms, PointerButton, PortalKeyboardSession, PortalPointerSession,
-    ScrollDirection,
+    type_text_with_keysyms, InputOperationGuard, PointerButton, PortalKeyboardSession,
+    PortalPointerSession, ScrollDirection,
 };
 use crate::screenshot::{
     capture_screenshot_raw, prepare_screenshot_payload, RawScreenshotCapture, ScreenshotCapture,
@@ -583,30 +583,6 @@ impl ComputerUseLinux {
         }
     }
 
-    /// Try a coordinate click through the absolute uinput pointer. `Some(ok)` if
-    /// the backend was used; `None` to fall through to portal / ydotool.
-    async fn try_abs_click(
-        &self,
-        x: i32,
-        y: i32,
-        button: Option<&str>,
-        count: u32,
-    ) -> Option<bool> {
-        if !self.ensure_abs_pointer().await {
-            return None;
-        }
-        let btn = crate::abs_pointer::PointerButton::from_name(button);
-        let abs_pointer = Arc::clone(&self.abs_pointer);
-        tokio::task::spawn_blocking(move || {
-            let mut guard = abs_pointer.lock().ok()?;
-            let pointer = guard.as_mut()?;
-            Some(pointer.click(x, y, btn, count).is_ok())
-        })
-        .await
-        .ok()
-        .flatten()
-    }
-
     #[tool(
         name = "click",
         description = "Click an element by index, semantic selector, or desktop coordinate pixels from screenshot metadata.",
@@ -619,7 +595,7 @@ impl ComputerUseLinux {
     )]
     async fn click(&self, Parameters(mut params): Parameters<ClickParams>) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params.clone()));
-        let input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
+        let mut input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
         let mut portal_target_point = None;
         // Raise the target window first (if specified) so the click lands on the
         // intended app rather than whatever is stacked on top at that pixel.
@@ -757,26 +733,41 @@ impl ComputerUseLinux {
         // Off-screen coordinates "succeed" at the uinput layer while landing on
         // no visible pixel — surface that instead of a silent no-op.
         let off_screen_note = self.off_screen_note_for_point(x, y).await;
-        if self
-            .try_abs_click(
-                x,
-                y,
-                params.button.as_deref(),
-                params.click_count.unwrap_or(1).clamp(1, 10),
-            )
-            .await
-            == Some(true)
-        {
-            return Json(with_notes(
-                pointer_action_result(ActionOutput {
-                    ok: true,
-                    implemented: true,
-                    action: "click".to_string(),
-                    message: "Action sent through the uinput absolute pointer.".to_string(),
-                    received,
-                }),
-                off_screen_note.clone(),
-            ));
+        if self.ensure_abs_pointer().await {
+            let btn = crate::abs_pointer::PointerButton::from_name(params.button.as_deref());
+            let count = params.click_count.unwrap_or(1).clamp(1, 10);
+            let abs_pointer = Arc::clone(&self.abs_pointer);
+            let (returned_guard, clicked) =
+                run_cancellation_safe_guarded(input_guard, async move {
+                    tokio::task::spawn_blocking(move || {
+                        let mut guard = abs_pointer.lock().ok()?;
+                        let pointer = guard.as_mut()?;
+                        Some(pointer.click(x, y, btn, count).is_ok())
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                })
+                .await;
+            let Some(returned_guard) = returned_guard else {
+                return Json(with_notes(
+                    action_result("click", Err(clicked.unwrap_err()), received),
+                    off_screen_note,
+                ));
+            };
+            input_guard = returned_guard;
+            if clicked == Ok(Some(true)) {
+                return Json(with_notes(
+                    pointer_action_result(ActionOutput {
+                        ok: true,
+                        implemented: true,
+                        action: "click".to_string(),
+                        message: "Action sent through the uinput absolute pointer.".to_string(),
+                        received,
+                    }),
+                    off_screen_note.clone(),
+                ));
+            }
         }
         if let Some(session) = self.cached_portal_pointer_session() {
             let Some((portal_x, portal_y)) =
@@ -794,6 +785,7 @@ impl ComputerUseLinux {
                 portal_y,
                 PointerButton::from_name(params.button.as_deref()),
                 params.click_count.unwrap_or(1).clamp(1, 10),
+                InputOperationGuard::new(input_guard),
             )
             .await
             {
@@ -835,6 +827,7 @@ impl ComputerUseLinux {
                         portal_y,
                         PointerButton::from_name(params.button.as_deref()),
                         params.click_count.unwrap_or(1).clamp(1, 10),
+                        InputOperationGuard::new(input_guard),
                     )
                     .await
                     {
@@ -862,8 +855,22 @@ impl ComputerUseLinux {
                         }
                     }
                 }
-                Ok(None) => {}
-                Err(_) => {}
+                Ok(None) => {
+                    return Json(with_notes(
+                        pointer_action_result(portal_action_error(
+                            "click",
+                            anyhow::anyhow!("the selected portal pointer backend was unavailable"),
+                            received,
+                        )),
+                        off_screen_note,
+                    ));
+                }
+                Err(error) => {
+                    return Json(with_notes(
+                        pointer_action_result(portal_action_error("click", error, received)),
+                        off_screen_note,
+                    ));
+                }
             }
         }
         let commands = vec![
@@ -1134,7 +1141,15 @@ impl ComputerUseLinux {
                     off_screen_note.clone(),
                 ));
             };
-            match portal_scroll(&session, portal_target_point, direction, units).await {
+            let session_for_input = session.clone();
+            let (input_guard, result) = run_cancellation_safe_input(input_guard, async move {
+                portal_scroll(&session_for_input, portal_target_point, direction, units)
+                    .await
+                    .map_err(|error| format!("{error:#}"))
+            })
+            .await;
+            let _input_guard = input_guard;
+            match result {
                 Ok(()) => {
                     return Json(with_notes(
                         pointer_action_result(ActionOutput {
@@ -1150,7 +1165,11 @@ impl ComputerUseLinux {
                 Err(error) => {
                     self.clear_portal_pointer_session(&session);
                     return Json(with_notes(
-                        pointer_action_result(portal_action_error("scroll", error, received)),
+                        pointer_action_result(portal_action_error(
+                            "scroll",
+                            anyhow::anyhow!(error),
+                            received,
+                        )),
                         off_screen_note.clone(),
                     ));
                 }
@@ -1170,7 +1189,16 @@ impl ComputerUseLinux {
                             off_screen_note.clone(),
                         ));
                     };
-                    match portal_scroll(&session, portal_target_point, direction, units).await {
+                    let session_for_input = session.clone();
+                    let (input_guard, result) =
+                        run_cancellation_safe_input(input_guard, async move {
+                            portal_scroll(&session_for_input, portal_target_point, direction, units)
+                                .await
+                                .map_err(|error| format!("{error:#}"))
+                        })
+                        .await;
+                    let _input_guard = input_guard;
+                    match result {
                         Ok(()) => {
                             return Json(with_notes(
                                 pointer_action_result(ActionOutput {
@@ -1188,15 +1216,31 @@ impl ComputerUseLinux {
                             self.clear_portal_pointer_session(&session);
                             return Json(with_notes(
                                 pointer_action_result(portal_action_error(
-                                    "scroll", error, received,
+                                    "scroll",
+                                    anyhow::anyhow!(error),
+                                    received,
                                 )),
                                 off_screen_note.clone(),
                             ));
                         }
                     }
                 }
-                Ok(None) => {}
-                Err(_) => {}
+                Ok(None) => {
+                    return Json(with_notes(
+                        pointer_action_result(portal_action_error(
+                            "scroll",
+                            anyhow::anyhow!("the selected portal pointer backend was unavailable"),
+                            received,
+                        )),
+                        off_screen_note,
+                    ));
+                }
+                Err(error) => {
+                    return Json(with_notes(
+                        pointer_action_result(portal_action_error("scroll", error, received)),
+                        off_screen_note,
+                    ));
+                }
             }
         }
         let (dx, dy) = match params.direction.to_ascii_lowercase().as_str() {
@@ -1243,28 +1287,35 @@ impl ComputerUseLinux {
     )]
     async fn drag(&self, Parameters(params): Parameters<DragParams>) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params));
-        let input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
+        let mut input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
         // Preferred backend: the uinput absolute pointer (accurate landing).
         if self.ensure_abs_pointer().await {
             let abs_pointer = Arc::clone(&self.abs_pointer);
-            let dragged = tokio::task::spawn_blocking(move || {
-                if let Ok(mut guard) = abs_pointer.lock() {
-                    guard.as_mut().map(|p| {
-                        p.drag(
-                            (params.start_x, params.start_y),
-                            (params.end_x, params.end_y),
-                            crate::abs_pointer::PointerButton::Left,
-                        )
-                        .is_ok()
+            let start = (params.start_x, params.start_y);
+            let end = (params.end_x, params.end_y);
+            let (returned_guard, dragged) =
+                run_cancellation_safe_guarded(input_guard, async move {
+                    tokio::task::spawn_blocking(move || {
+                        if let Ok(mut guard) = abs_pointer.lock() {
+                            guard.as_mut().map(|pointer| {
+                                pointer
+                                    .drag(start, end, crate::abs_pointer::PointerButton::Left)
+                                    .is_ok()
+                            })
+                        } else {
+                            None
+                        }
                     })
-                } else {
-                    None
-                }
-            })
-            .await
-            .ok()
-            .flatten();
-            if dragged == Some(true) {
+                    .await
+                    .ok()
+                    .flatten()
+                })
+                .await;
+            let Some(returned_guard) = returned_guard else {
+                return Json(action_result("drag", Err(dragged.unwrap_err()), received));
+            };
+            input_guard = returned_guard;
+            if dragged == Ok(Some(true)) {
                 return Json(pointer_action_result(ActionOutput {
                     ok: true,
                     implemented: true,
@@ -1292,7 +1343,16 @@ impl ComputerUseLinux {
                     "drag", received,
                 )));
             };
-            match portal_drag(&session, start_x, start_y, end_x, end_y).await {
+            match portal_drag(
+                &session,
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                InputOperationGuard::new(input_guard),
+            )
+            .await
+            {
                 Ok(()) => {
                     return Json(pointer_action_result(ActionOutput {
                         ok: true,
@@ -1329,7 +1389,16 @@ impl ComputerUseLinux {
                             "drag", received,
                         )));
                     };
-                    match portal_drag(&session, start_x, start_y, end_x, end_y).await {
+                    match portal_drag(
+                        &session,
+                        start_x,
+                        start_y,
+                        end_x,
+                        end_y,
+                        InputOperationGuard::new(input_guard),
+                    )
+                    .await
+                    {
                         Ok(()) => {
                             return Json(pointer_action_result(ActionOutput {
                                 ok: true,
@@ -1348,8 +1417,18 @@ impl ComputerUseLinux {
                         }
                     }
                 }
-                Ok(None) => {}
-                Err(_) => {}
+                Ok(None) => {
+                    return Json(pointer_action_result(portal_action_error(
+                        "drag",
+                        anyhow::anyhow!("the selected portal pointer backend was unavailable"),
+                        received,
+                    )));
+                }
+                Err(error) => {
+                    return Json(pointer_action_result(portal_action_error(
+                        "drag", error, received,
+                    )));
+                }
             }
         }
         let (input_guard, result) = run_cancellation_safe_input(input_guard, async move {
@@ -1377,7 +1456,8 @@ impl ComputerUseLinux {
         Parameters(params): Parameters<PressKeyParams>,
     ) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params.clone()));
-        let input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
+        let input_guard =
+            InputOperationGuard::new(Arc::clone(&self.input_operation_lock).lock_owned().await);
         let focus = match self.focus_target_for_input(&params.window_target()).await {
             Ok(focus) => focus,
             Err(message) => {
@@ -1406,7 +1486,14 @@ impl ComputerUseLinux {
                         .iter()
                         .map(|modifier| i32::from(*modifier))
                         .collect::<Vec<_>>();
-                    match press_keycode_chord(&session, &modifiers, i32::from(chord_key)).await {
+                    match press_keycode_chord(
+                        &session,
+                        &modifiers,
+                        i32::from(chord_key),
+                        Some(input_guard),
+                    )
+                    .await
+                    {
                         Ok(()) => {
                             let notes = self.input_landing_notes(focus.as_ref(), false).await;
                             return Json(with_notes(
@@ -1430,8 +1517,22 @@ impl ComputerUseLinux {
                         }
                     }
                 }
-                Ok(None) => {}
-                Err(_) => {}
+                Ok(None) => {
+                    return Json(action_result_with_focus(
+                        "press_key",
+                        Err("the selected portal keyboard backend was unavailable; input was not replayed through another backend".to_string()),
+                        received,
+                        focus,
+                    ));
+                }
+                Err(error) => {
+                    return Json(action_result_with_focus(
+                        "press_key",
+                        Err(format!("remote desktop portal keyboard initialization failed; input was not replayed through another backend: {error:#}")),
+                        received,
+                        focus,
+                    ));
+                }
             }
         }
         let Some(key_events) = key_sequence(&params.key) else {
@@ -1504,7 +1605,8 @@ impl ComputerUseLinux {
         Parameters(params): Parameters<TypeTextParams>,
     ) -> Json<ActionOutput> {
         let received = Some(serde_json::json!(params.clone()));
-        let input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
+        let mut input_guard =
+            InputOperationGuard::new(Arc::clone(&self.input_operation_lock).lock_owned().await);
         let focus = match self.focus_target_for_input(&params.window_target()).await {
             Ok(focus) => focus,
             Err(message) => {
@@ -1520,8 +1622,35 @@ impl ComputerUseLinux {
         if self.should_prefer_kde_clipboard_text_backend() {
             match self.ensure_portal_keyboard_session().await {
                 Ok(Some(session)) => {
-                    let _clipboard_guard = self.kde_clipboard_lock.lock().await;
-                    match run_kde_clipboard_paste_text(&session, &params.text).await {
+                    let clipboard_guard = Arc::clone(&self.kde_clipboard_lock).lock_owned().await;
+                    let session_for_input = session.clone();
+                    let text = params.text.clone();
+                    let portal_operation_guard = input_guard.clone();
+                    let (guards, guarded_result) =
+                        run_cancellation_safe_guarded((input_guard, clipboard_guard), async move {
+                            run_kde_clipboard_paste_text(
+                                &session_for_input,
+                                &text,
+                                portal_operation_guard,
+                            )
+                            .await
+                        })
+                        .await;
+                    let (returned_input_guard, clipboard_guard) = match guards {
+                        Some(guards) => guards,
+                        None => {
+                            return Json(action_result_with_focus(
+                                "type_text",
+                                Err(guarded_result.unwrap_err()),
+                                received,
+                                focus,
+                            ));
+                        }
+                    };
+                    input_guard = returned_input_guard;
+                    drop(clipboard_guard);
+                    let result = guarded_result.expect("guarded task returned its guards");
+                    match result {
                         Ok(message) => {
                             let notes = self.input_landing_notes(focus.as_ref(), true).await;
                             return Json(with_notes(
@@ -1549,38 +1678,68 @@ impl ComputerUseLinux {
                         }
                     }
                 }
-                Ok(None) => {}
-                Err(_) => {}
+                Ok(None) => {
+                    return Json(action_result_with_focus(
+                        "type_text",
+                        Err("the selected KDE portal keyboard backend was unavailable; input was not replayed through another backend".to_string()),
+                        received,
+                        focus,
+                    ));
+                }
+                Err(error) => {
+                    return Json(action_result_with_focus(
+                        "type_text",
+                        Err(format!("KDE portal keyboard initialization failed; input was not replayed through another backend: {error:#}")),
+                        received,
+                        focus,
+                    ));
+                }
             }
         }
         if self.should_prefer_portal_keyboard_backend().await {
             if let Ok(keysyms) = keysyms_for_text(&params.text) {
                 match self.ensure_portal_keyboard_session().await {
-                    Ok(Some(session)) => match type_text_with_keysyms(&session, &keysyms).await {
-                        Ok(()) => {
-                            let notes = self.input_landing_notes(focus.as_ref(), true).await;
-                            return Json(with_notes(
-                                successful_action_with_focus(
+                    Ok(Some(session)) => {
+                        match type_text_with_keysyms(&session, &keysyms, Some(input_guard)).await {
+                            Ok(()) => {
+                                let notes = self.input_landing_notes(focus.as_ref(), true).await;
+                                return Json(with_notes(
+                                    successful_action_with_focus(
+                                        "type_text",
+                                        "Action sent through the remote desktop portal.",
+                                        received,
+                                        focus,
+                                    ),
+                                    notes,
+                                ));
+                            }
+                            Err(error) => {
+                                self.clear_portal_keyboard_session(&session);
+                                return Json(action_result_with_focus(
                                     "type_text",
-                                    "Action sent through the remote desktop portal.",
+                                    Err(format!("{error:#}")),
                                     received,
                                     focus,
-                                ),
-                                notes,
-                            ));
+                                ));
+                            }
                         }
-                        Err(error) => {
-                            self.clear_portal_keyboard_session(&session);
-                            return Json(action_result_with_focus(
-                                "type_text",
-                                Err(format!("{error:#}")),
-                                received,
-                                focus,
-                            ));
-                        }
-                    },
-                    Ok(None) => {}
-                    Err(_) => {}
+                    }
+                    Ok(None) => {
+                        return Json(action_result_with_focus(
+                            "type_text",
+                            Err("the selected portal keyboard backend was unavailable; input was not replayed through another backend".to_string()),
+                            received,
+                            focus,
+                        ));
+                    }
+                    Err(error) => {
+                        return Json(action_result_with_focus(
+                            "type_text",
+                            Err(format!("remote desktop portal keyboard initialization failed; input was not replayed through another backend: {error:#}")),
+                            received,
+                            focus,
+                        ));
+                    }
                 }
             }
         }
@@ -4231,23 +4390,34 @@ fn wheel_mousemove_args(dx: i32, dy: i32) -> Vec<String> {
     ]
 }
 
-async fn run_cancellation_safe_input<T, F>(
-    input_guard: tokio::sync::OwnedMutexGuard<()>,
+async fn run_cancellation_safe_guarded<G, T, F>(
+    guard: G,
     operation: F,
-) -> (
-    Option<tokio::sync::OwnedMutexGuard<()>>,
-    std::result::Result<T, String>,
-)
+) -> (Option<G>, std::result::Result<T, String>)
 where
+    G: Send + 'static,
     T: Send + 'static,
-    F: Future<Output = std::result::Result<T, String>> + Send + 'static,
+    F: Future<Output = T> + Send + 'static,
 {
     // Dropping a JoinHandle detaches its task, retaining the guard until the
     // stateful input operation has completed even if the caller is cancelled.
-    match tokio::spawn(async move { (input_guard, operation.await) }).await {
-        Ok((input_guard, result)) => (Some(input_guard), result),
+    match tokio::spawn(async move { (guard, operation.await) }).await {
+        Ok((guard, result)) => (Some(guard), Ok(result)),
         Err(error) => (None, Err(format!("stateful input task failed: {error}"))),
     }
+}
+
+async fn run_cancellation_safe_input<G, T, F>(
+    input_guard: G,
+    operation: F,
+) -> (Option<G>, std::result::Result<T, String>)
+where
+    G: Send + 'static,
+    T: Send + 'static,
+    F: Future<Output = std::result::Result<T, String>> + Send + 'static,
+{
+    let (input_guard, result) = run_cancellation_safe_guarded(input_guard, operation).await;
+    (input_guard, result.and_then(|result| result))
 }
 
 async fn run_ydotool_sequence(
@@ -4400,6 +4570,7 @@ impl KdeClipboardPasteError {
 async fn run_kde_clipboard_paste_text(
     session: &PortalKeyboardSession,
     text: &str,
+    operation_guard: InputOperationGuard,
 ) -> std::result::Result<String, KdeClipboardPasteError> {
     let previous = kde_clipboard_contents()
         .await
@@ -4408,9 +4579,14 @@ async fn run_kde_clipboard_paste_text(
         .await
         .map_err(KdeClipboardPasteError::before_text_input)?;
 
-    let paste_result = press_keycode_chord(session, &[EVDEV_KEY_LEFTCTRL], EVDEV_KEY_V)
-        .await
-        .map_err(|error| format!("{error:#}"));
+    let paste_result = press_keycode_chord(
+        session,
+        &[EVDEV_KEY_LEFTCTRL],
+        EVDEV_KEY_V,
+        Some(operation_guard),
+    )
+    .await
+    .map_err(|error| format!("{error:#}"));
 
     sleep(kde_clipboard_restore_delay(text)).await;
     let restore_result = kde_set_clipboard_contents(&previous).await;
@@ -6199,6 +6375,43 @@ mod tests {
         )
         .await
         .expect("input lock remained held after the operation finished");
+    }
+
+    #[tokio::test]
+    async fn cancelled_clipboard_restore_keeps_both_operation_locks() {
+        let input_lock = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        let clipboard_lock = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        let input_guard = std::sync::Arc::clone(&input_lock).lock_owned().await;
+        let clipboard_guard = std::sync::Arc::clone(&clipboard_lock).lock_owned().await;
+        let (pasted_tx, pasted_rx) = tokio::sync::oneshot::channel();
+        let (allow_restore_tx, allow_restore_rx) = tokio::sync::oneshot::channel();
+        let (restored_tx, restored_rx) = tokio::sync::oneshot::channel();
+
+        let waiter = tokio::spawn(async move {
+            run_cancellation_safe_guarded((input_guard, clipboard_guard), async move {
+                let _ = pasted_tx.send(());
+                let _ = allow_restore_rx.await;
+                let _ = restored_tx.send(());
+            })
+            .await
+        });
+
+        pasted_rx.await.expect("paste did not finish");
+        waiter.abort();
+        let _ = waiter.await;
+        assert!(input_lock.try_lock().is_err());
+        assert!(clipboard_lock.try_lock().is_err());
+
+        allow_restore_tx
+            .send(())
+            .expect("clipboard restore stopped on caller cancellation");
+        timeout(Duration::from_secs(1), restored_rx)
+            .await
+            .expect("clipboard restore did not finish")
+            .expect("clipboard restore dropped its completion marker");
+        tokio::task::yield_now().await;
+        assert!(input_lock.try_lock().is_ok());
+        assert!(clipboard_lock.try_lock().is_ok());
     }
 
     #[test]

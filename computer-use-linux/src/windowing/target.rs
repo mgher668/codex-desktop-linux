@@ -4,7 +4,8 @@ use anyhow::{bail, Result};
 use std::future::Future;
 use tokio::time::{sleep_until, timeout_at, Duration, Instant};
 
-const FOCUS_VERIFY_TIMEOUT: Duration = Duration::from_secs(1);
+const FOCUS_VERIFY_TRANSITION_TIMEOUT: Duration = Duration::from_secs(1);
+const FOCUS_VERIFY_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 const FOCUS_VERIFY_DELAY: Duration = Duration::from_millis(50);
 
 pub async fn list_windows() -> Result<Vec<WindowInfo>> {
@@ -70,25 +71,33 @@ async fn current_focused_window() -> Result<Option<WindowInfo>> {
 }
 
 async fn wait_for_focused_window(requested_window: &WindowInfo) -> Option<WindowInfo> {
-    wait_for_focused_window_with(requested_window, FOCUS_VERIFY_TIMEOUT, || {
-        registry::focused_window_for_backend(&requested_window.backend)
-    })
+    wait_for_focused_window_with(
+        requested_window,
+        FOCUS_VERIFY_TRANSITION_TIMEOUT,
+        FOCUS_VERIFY_QUERY_TIMEOUT,
+        || registry::focused_window_for_backend(&requested_window.backend),
+    )
     .await
 }
 
 async fn wait_for_focused_window_with<F, Fut>(
     requested_window: &WindowInfo,
-    verify_timeout: Duration,
+    transition_timeout: Duration,
+    query_timeout: Duration,
     mut query: F,
 ) -> Option<WindowInfo>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<Option<WindowInfo>>>,
 {
-    let deadline = Instant::now() + verify_timeout;
+    // A stale first query and a fresh second query may each consume the full
+    // backend budget (for example Hyprland runs two bounded commands). Keep the
+    // workspace-transition allowance separate from those query costs.
+    let deadline = Instant::now() + transition_timeout + query_timeout.saturating_mul(2);
     let mut last_focused_window = None;
     loop {
-        match timeout_at(deadline, query()).await {
+        let query_deadline = (Instant::now() + query_timeout).min(deadline);
+        match timeout_at(query_deadline, query()).await {
             Ok(Ok(focused_window)) => {
                 if focused_window
                     .as_ref()
@@ -401,7 +410,8 @@ mod tests {
 
     #[test]
     fn focus_verification_allows_workspace_transition_latency() {
-        assert!(FOCUS_VERIFY_TIMEOUT >= Duration::from_secs(1));
+        assert!(FOCUS_VERIFY_TRANSITION_TIMEOUT >= Duration::from_secs(1));
+        assert!(FOCUS_VERIFY_QUERY_TIMEOUT >= Duration::from_secs(4));
     }
 
     #[tokio::test]
@@ -422,14 +432,72 @@ mod tests {
         };
         let started = Instant::now();
 
-        let focused =
-            wait_for_focused_window_with(&requested_window, Duration::from_millis(20), || async {
+        let focused = wait_for_focused_window_with(
+            &requested_window,
+            Duration::from_millis(20),
+            Duration::from_millis(20),
+            || async {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 Ok::<_, anyhow::Error>(None)
-            })
-            .await;
+            },
+        )
+        .await;
 
         assert!(focused.is_none());
         assert!(started.elapsed() < Duration::from_millis(500));
+    }
+
+    #[tokio::test]
+    async fn delayed_fresh_query_can_verify_after_a_stale_result() {
+        let requested_window = WindowInfo {
+            window_id: 1,
+            title: None,
+            app_id: None,
+            wm_class: None,
+            pid: None,
+            bounds: None,
+            workspace: None,
+            focused: false,
+            hidden: false,
+            client_type: None,
+            backend: "test".to_string(),
+            terminal: None,
+        };
+        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let focused = wait_for_focused_window_with(
+            &requested_window,
+            Duration::from_millis(100),
+            Duration::from_millis(20),
+            || {
+                let attempts = std::sync::Arc::clone(&attempts);
+                async move {
+                    tokio::time::sleep(Duration::from_millis(15)).await;
+                    let window_id =
+                        if attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                            2
+                        } else {
+                            1
+                        };
+                    Ok::<_, anyhow::Error>(Some(WindowInfo {
+                        window_id,
+                        title: None,
+                        app_id: None,
+                        wm_class: None,
+                        pid: None,
+                        bounds: None,
+                        workspace: None,
+                        focused: true,
+                        hidden: false,
+                        client_type: None,
+                        backend: "test".to_string(),
+                        terminal: None,
+                    }))
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(focused.map(|window| window.window_id), Some(1));
     }
 }
