@@ -49,6 +49,10 @@ const REMOTE_CONTROL_COPY_MARKER = "codexLinuxRemoteControlCopy";
 const REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER = "codexLinuxRemoteMobileLocalAppServerArgs";
 const REMOTE_MOBILE_APP_SERVER_BASE_ARGS_NEEDLE = "[`-c`,`features.code_mode_host=true`]";
 const REMOTE_MOBILE_APP_SERVER_LAUNCH_TAIL = "`app-server`,`--analytics-default-enabled`]}";
+const REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_HELPER =
+  "function codexLinuxRemoteMobileLocalAppServerArgs(){return process.platform===`linux`?[`--remote-control`]:[]}";
+const REMOTE_MOBILE_APP_SERVER_PATCHED_LAUNCH_TAIL =
+  "`app-server`,...codexLinuxRemoteMobileLocalAppServerArgs(),`--analytics-default-enabled`]}";
 const REMOTE_CONTROL_APP_INITIAL_ASSET_PATTERN = /^app-initial-[^.]+\.js$/u;
 const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
   ["defaultMessage:`Mac`", "defaultMessage:`Linux`"],
@@ -211,6 +215,11 @@ function applyLinuxRemoteControlClientRevocationRecoveryPatch(source) {
 
 function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
   if (source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)) {
+    if (!hasLinuxRemoteMobileLocalAppServerRemoteControlPatch(source)) {
+      console.warn(
+        "WARN: Found an incomplete local Desktop app-server remote-control patch - refusing to accept partial state",
+      );
+    }
     return source;
   }
   const baseArgsMatches = [
@@ -242,10 +251,7 @@ function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
     return source;
   }
 
-  const helper =
-    "function codexLinuxRemoteMobileLocalAppServerArgs(){return process.platform===`linux`?[`--remote-control`]:[]}";
-  const replacementTail = "`app-server`,...codexLinuxRemoteMobileLocalAppServerArgs(),`--analytics-default-enabled`]}";
-  const replaced = `${source.slice(0, launchTailIndex)}${replacementTail}${source.slice(
+  const replaced = `${source.slice(0, launchTailIndex)}${REMOTE_MOBILE_APP_SERVER_PATCHED_LAUNCH_TAIL}${source.slice(
     launchTailIndex + REMOTE_MOBILE_APP_SERVER_LAUNCH_TAIL.length,
   )}`;
   // Insert after a leading "use strict" so prepending the helper does not
@@ -255,7 +261,14 @@ function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
     : replaced.startsWith("'use strict';")
       ? "'use strict';".length
       : 0;
-  return `${replaced.slice(0, insertAt)}${helper}${replaced.slice(insertAt)}`;
+  return `${replaced.slice(0, insertAt)}${REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_HELPER}${replaced.slice(insertAt)}`;
+}
+
+function hasLinuxRemoteMobileLocalAppServerRemoteControlPatch(source) {
+  return (
+    source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_HELPER) &&
+    source.includes(REMOTE_MOBILE_APP_SERVER_PATCHED_LAUNCH_TAIL)
+  );
 }
 
 function applyLinuxRemoteMobileAppServerRemoteControlExtractedAppPatch(extractedDir) {
@@ -287,7 +300,7 @@ function applyLinuxRemoteMobileAppServerRemoteControlExtractedAppPatch(extracted
       matched += 1;
       fs.writeFileSync(filePath, patched, "utf8");
       changed += 1;
-    } else if (source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)) {
+    } else if (hasLinuxRemoteMobileLocalAppServerRemoteControlPatch(source)) {
       matched += 1;
     }
   }
@@ -1493,6 +1506,8 @@ module.exports = [
 module.exports.applyLinuxRemoteControlDeviceKeyPatch = applyLinuxRemoteControlDeviceKeyPatch;
 module.exports.applyLinuxRemoteMobileAppServerRemoteControlPatch =
   applyLinuxRemoteMobileAppServerRemoteControlPatch;
+module.exports.hasLinuxRemoteMobileLocalAppServerRemoteControlPatch =
+  hasLinuxRemoteMobileLocalAppServerRemoteControlPatch;
 module.exports.applyLinuxRemoteMobileChromeBridgePatch = applyLinuxRemoteMobileChromeBridgePatch;
 module.exports.applyLinuxRemoteMobileCompletedItemRecoveryPatch =
   applyLinuxRemoteMobileCompletedItemRecoveryPatch;

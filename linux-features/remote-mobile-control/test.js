@@ -32,6 +32,7 @@ const {
   applyLinuxRemoteControlEnablementBridgePatch,
   applyLinuxRemoteMobileActiveStatusPatch,
   applyLinuxRemoteMobileAppServerRemoteControlPatch,
+  hasLinuxRemoteMobileLocalAppServerRemoteControlPatch,
   applyLinuxRemoteMobileChromeBridgePatch,
   applyLinuxRemoteMobileCompletedItemRecoveryPatch,
   applyLinuxRemoteMobileConversationHydrationPatch,
@@ -563,7 +564,10 @@ test("remote mobile stage hook is idempotent and stages its markers and executab
     };
 
     fs.mkdirSync(buildDir, { recursive: true });
-    fs.writeFileSync(path.join(buildDir, "main.js"), "globalThis.codexLinuxRemoteMobileLocalAppServerArgs=true;");
+    fs.writeFileSync(
+      path.join(buildDir, "main.js"),
+      applyLinuxRemoteMobileAppServerRemoteControlPatch(syntheticCurrentLocalAppServerLaunchBundle()),
+    );
 
     const first = runStageHook(env);
     const second = runStageHook(env);
@@ -611,6 +615,33 @@ test("remote mobile stage hook removes a stale ownership marker when only the le
   }
 });
 
+test("remote mobile stage hook rejects an incomplete local Desktop patch marker", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
+  try {
+    const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
+    const workDir = path.join(tempRoot, "work");
+    const buildDir = path.join(workDir, "app-extracted", ".vite", "build");
+    const marker = path.join(installDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
+
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "src.js"), "globalThis.codexLinuxRemoteMobileLocalAppServerArgs=true;");
+
+    const result = runStageHook({
+      ARCH: "x64",
+      CODEX_UPSTREAM_APP_DIR: path.join(tempRoot, "upstream-app"),
+      INSTALL_DIR: installDir,
+      SCRIPT_DIR: REPO_ROOT,
+      WORK_DIR: workDir,
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(fs.existsSync(marker), false);
+    assert.match(result.stderr, /Desktop app-server remote-control marker not found/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("remote mobile stage hook replaces an ownership marker symlink without following it", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
   try {
@@ -622,7 +653,10 @@ test("remote mobile stage hook replaces an ownership marker symlink without foll
 
     fs.mkdirSync(buildDir, { recursive: true });
     fs.mkdirSync(path.dirname(marker), { recursive: true });
-    fs.writeFileSync(path.join(buildDir, "main.js"), "globalThis.codexLinuxRemoteMobileLocalAppServerArgs=true;");
+    fs.writeFileSync(
+      path.join(buildDir, "main.js"),
+      applyLinuxRemoteMobileAppServerRemoteControlPatch(syntheticCurrentLocalAppServerLaunchBundle()),
+    );
     fs.writeFileSync(target, "preserved\n");
     fs.symlinkSync(target, marker);
 
@@ -1245,6 +1279,14 @@ test("Linux remote mobile app-server launch enables remote control on the Deskto
     /return\[\.\.\.Iz,\.\.\.Lz\.flatMap\(.+`app-server`,\.\.\.codexLinuxRemoteMobileLocalAppServerArgs\(\),`--analytics-default-enabled`\]\}/,
   );
   assert.equal(applyLinuxRemoteMobileAppServerRemoteControlPatch(patched), patched);
+  assert.equal(hasLinuxRemoteMobileLocalAppServerRemoteControlPatch(patched), true);
+});
+
+test("Linux remote mobile app-server launch rejects an incomplete local patch marker", () => {
+  const source = "globalThis.codexLinuxRemoteMobileLocalAppServerArgs=true;";
+
+  assert.equal(applyLinuxRemoteMobileAppServerRemoteControlPatch(source), source);
+  assert.equal(hasLinuxRemoteMobileLocalAppServerRemoteControlPatch(source), false);
 });
 
 test("Linux remote mobile app-server launch does not treat the legacy WSL path as the Desktop transport", () => {
@@ -1271,6 +1313,29 @@ test("Linux remote mobile extracted-app patch modifies only the local Desktop tr
     assert.deepEqual(result, { matched: 1, changed: 1 });
     assert.equal(fs.readFileSync(wslFile, "utf8"), syntheticLegacyWslAppServerLaunchBundle());
     assert.match(fs.readFileSync(localFile, "utf8"), /codexLinuxRemoteMobileLocalAppServerArgs/);
+  } finally {
+    fs.rmSync(tempApp, { recursive: true, force: true });
+  }
+});
+
+test("Linux remote mobile extracted-app patch rejects WSL-only and partial local matches", () => {
+  const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-partial-transport-"));
+  try {
+    const buildDir = path.join(tempApp, ".vite", "build");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(path.join(buildDir, "main-test.js"), syntheticLegacyWslAppServerLaunchBundle());
+    fs.writeFileSync(path.join(buildDir, "src-test.js"), "globalThis.codexLinuxRemoteMobileLocalAppServerArgs=true;");
+
+    const descriptor = remoteMobilePatchDescriptors.find(
+      ({ id }) => id === "linux-remote-mobile-app-server-remote-control",
+    );
+    const result = descriptor.apply(tempApp);
+
+    assert.deepEqual(result, {
+      matched: 0,
+      changed: 0,
+      reason: "no local Desktop app-server base args found",
+    });
   } finally {
     fs.rmSync(tempApp, { recursive: true, force: true });
   }
