@@ -741,8 +741,14 @@ impl ComputerUseLinux {
                 run_cancellation_safe_guarded(input_guard, async move {
                     tokio::task::spawn_blocking(move || {
                         let mut guard = abs_pointer.lock().ok()?;
-                        let pointer = guard.as_mut()?;
-                        Some(pointer.click(x, y, btn, count).is_ok())
+                        let result = guard
+                            .as_mut()?
+                            .click(x, y, btn, count)
+                            .map_err(|error| format!("{error:#}"));
+                        if result.is_err() {
+                            guard.take();
+                        }
+                        Some(result)
                     })
                     .await
                     .ok()
@@ -756,17 +762,33 @@ impl ComputerUseLinux {
                 ));
             };
             input_guard = returned_guard;
-            if clicked == Ok(Some(true)) {
-                return Json(with_notes(
-                    pointer_action_result(ActionOutput {
-                        ok: true,
-                        implemented: true,
-                        action: "click".to_string(),
-                        message: "Action sent through the uinput absolute pointer.".to_string(),
-                        received,
-                    }),
-                    off_screen_note.clone(),
-                ));
+            match clicked {
+                Ok(Some(Ok(()))) => {
+                    return Json(with_notes(
+                        pointer_action_result(ActionOutput {
+                            ok: true,
+                            implemented: true,
+                            action: "click".to_string(),
+                            message: "Action sent through the uinput absolute pointer.".to_string(),
+                            received,
+                        }),
+                        off_screen_note.clone(),
+                    ));
+                }
+                Ok(Some(Err(error))) => {
+                    return Json(with_notes(
+                        action_result(
+                            "click",
+                            Err(format!(
+                                "uinput click may have started before it failed; the device was invalidated and input was not replayed through another backend: {error}"
+                            )),
+                            received,
+                        ),
+                        off_screen_note,
+                    ));
+                }
+                Ok(None) => {}
+                Err(_) => unreachable!("missing guard already handled the guarded task failure"),
             }
         }
         if let Some(session) = self.cached_portal_pointer_session() {
@@ -1297,11 +1319,15 @@ impl ComputerUseLinux {
                 run_cancellation_safe_guarded(input_guard, async move {
                     tokio::task::spawn_blocking(move || {
                         if let Ok(mut guard) = abs_pointer.lock() {
-                            guard.as_mut().map(|pointer| {
+                            let result = guard.as_mut().map(|pointer| {
                                 pointer
                                     .drag(start, end, crate::abs_pointer::PointerButton::Left)
-                                    .is_ok()
-                            })
+                                    .map_err(|error| format!("{error:#}"))
+                            });
+                            if result.as_ref().is_some_and(Result::is_err) {
+                                guard.take();
+                            }
+                            result
                         } else {
                             None
                         }
@@ -1315,14 +1341,27 @@ impl ComputerUseLinux {
                 return Json(action_result("drag", Err(dragged.unwrap_err()), received));
             };
             input_guard = returned_guard;
-            if dragged == Ok(Some(true)) {
-                return Json(pointer_action_result(ActionOutput {
-                    ok: true,
-                    implemented: true,
-                    action: "drag".to_string(),
-                    message: "Action sent through the uinput absolute pointer.".to_string(),
-                    received,
-                }));
+            match dragged {
+                Ok(Some(Ok(()))) => {
+                    return Json(pointer_action_result(ActionOutput {
+                        ok: true,
+                        implemented: true,
+                        action: "drag".to_string(),
+                        message: "Action sent through the uinput absolute pointer.".to_string(),
+                        received,
+                    }));
+                }
+                Ok(Some(Err(error))) => {
+                    return Json(action_result(
+                        "drag",
+                        Err(format!(
+                            "uinput drag may have started before it failed; the device was invalidated and input was not replayed through another backend: {error}"
+                        )),
+                        received,
+                    ));
+                }
+                Ok(None) => {}
+                Err(_) => unreachable!("missing guard already handled the guarded task failure"),
             }
         }
         if let Some(session) = self.cached_portal_pointer_session() {
@@ -1697,49 +1736,60 @@ impl ComputerUseLinux {
             }
         }
         if self.should_prefer_portal_keyboard_backend().await {
-            if let Ok(keysyms) = keysyms_for_text(&params.text) {
-                match self.ensure_portal_keyboard_session().await {
-                    Ok(Some(session)) => {
-                        match type_text_with_keysyms(&session, &keysyms, Some(input_guard)).await {
-                            Ok(()) => {
-                                let notes = self.input_landing_notes(focus.as_ref(), true).await;
-                                return Json(with_notes(
-                                    successful_action_with_focus(
-                                        "type_text",
-                                        "Action sent through the remote desktop portal.",
-                                        received,
-                                        focus,
-                                    ),
-                                    notes,
-                                ));
-                            }
-                            Err(error) => {
-                                self.clear_portal_keyboard_session(&session);
-                                return Json(action_result_with_focus(
+            let keysyms = match keysyms_for_text(&params.text) {
+                Ok(keysyms) => keysyms,
+                Err(error) => {
+                    return Json(action_result_with_focus(
+                        "type_text",
+                        Err(format!(
+                            "text cannot be represented by the selected portal keyboard backend; input was not replayed through another backend: {error:#}"
+                        )),
+                        received,
+                        focus,
+                    ));
+                }
+            };
+            match self.ensure_portal_keyboard_session().await {
+                Ok(Some(session)) => {
+                    match type_text_with_keysyms(&session, &keysyms, Some(input_guard)).await {
+                        Ok(()) => {
+                            let notes = self.input_landing_notes(focus.as_ref(), true).await;
+                            return Json(with_notes(
+                                successful_action_with_focus(
                                     "type_text",
-                                    Err(format!("{error:#}")),
+                                    "Action sent through the remote desktop portal.",
                                     received,
                                     focus,
-                                ));
-                            }
+                                ),
+                                notes,
+                            ));
+                        }
+                        Err(error) => {
+                            self.clear_portal_keyboard_session(&session);
+                            return Json(action_result_with_focus(
+                                "type_text",
+                                Err(format!("{error:#}")),
+                                received,
+                                focus,
+                            ));
                         }
                     }
-                    Ok(None) => {
-                        return Json(action_result_with_focus(
+                }
+                Ok(None) => {
+                    return Json(action_result_with_focus(
                             "type_text",
                             Err("the selected portal keyboard backend was unavailable; input was not replayed through another backend".to_string()),
                             received,
                             focus,
                         ));
-                    }
-                    Err(error) => {
-                        return Json(action_result_with_focus(
+                }
+                Err(error) => {
+                    return Json(action_result_with_focus(
                             "type_text",
                             Err(format!("remote desktop portal keyboard initialization failed; input was not replayed through another backend: {error:#}")),
                             received,
                             focus,
                         ));
-                    }
                 }
             }
         }
@@ -4565,6 +4615,14 @@ impl KdeClipboardPasteError {
             clear_portal_keyboard_session: true,
         }
     }
+
+    fn ambiguous_clipboard_set(message: String) -> Self {
+        Self {
+            message,
+            can_fallback_to_ydotool: false,
+            clear_portal_keyboard_session: false,
+        }
+    }
 }
 
 async fn run_kde_clipboard_paste_text(
@@ -4575,9 +4633,18 @@ async fn run_kde_clipboard_paste_text(
     let previous = kde_clipboard_contents()
         .await
         .map_err(KdeClipboardPasteError::before_text_input)?;
-    kde_set_clipboard_contents(text)
-        .await
-        .map_err(KdeClipboardPasteError::before_text_input)?;
+    if let Err(set_error) = kde_set_clipboard_contents(text).await {
+        let restore_result = kde_set_clipboard_contents(&previous).await;
+        let message = match restore_result {
+            Ok(()) => format!(
+                "KDE clipboard replacement failed ambiguously and the previous contents were restored; text was not replayed through another backend: {set_error}"
+            ),
+            Err(restore_error) => format!(
+                "KDE clipboard replacement failed ambiguously; restoring the previous contents also failed, and text was not replayed through another backend: {set_error}; restore failed: {restore_error}"
+            ),
+        };
+        return Err(KdeClipboardPasteError::ambiguous_clipboard_set(message));
+    }
 
     let paste_result = press_keycode_chord(
         session,
@@ -5859,6 +5926,14 @@ mod tests {
             kde_clipboard_restore_delay(&capped_text),
             Duration::from_millis(KDE_CLIPBOARD_RESTORE_MAX_DELAY_MS)
         );
+    }
+
+    #[test]
+    fn ambiguous_kde_clipboard_set_never_allows_input_replay() {
+        let error = KdeClipboardPasteError::ambiguous_clipboard_set("timed out".to_string());
+
+        assert!(!error.can_fallback_to_ydotool);
+        assert!(!error.clear_portal_keyboard_session);
     }
 
     #[tokio::test]
