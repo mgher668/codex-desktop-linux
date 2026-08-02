@@ -46,9 +46,9 @@ const REMOTE_CONTROL_STATUS_WAIT_MARKER = "codexLinuxRemoteControlStatusWaitMs";
 const REMOTE_CONTROL_REVOKE_SETUP_RESET_MARKER = "codexLinuxRemoteControlResetMobileSetupAfterRevoke";
 const REMOTE_CONTROL_VISIBILITY_MARKER = "codexLinuxRemoteControlVisibilityEnabled";
 const REMOTE_CONTROL_COPY_MARKER = "codexLinuxRemoteControlCopy";
-const REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER = "codexLinuxRemoteMobileAppServerArgs";
-const REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE =
-  "[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`]";
+const REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER = "codexLinuxRemoteMobileLocalAppServerArgs";
+const REMOTE_MOBILE_APP_SERVER_BASE_ARGS_NEEDLE = "[`-c`,`features.code_mode_host=true`]";
+const REMOTE_MOBILE_APP_SERVER_LAUNCH_TAIL = "`app-server`,`--analytics-default-enabled`]}";
 const REMOTE_CONTROL_APP_INITIAL_ASSET_PATTERN = /^app-initial-[^.]+\.js$/u;
 const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
   ["defaultMessage:`Mac`", "defaultMessage:`Linux`"],
@@ -213,15 +213,41 @@ function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
   if (source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)) {
     return source;
   }
-  if (!source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE)) {
+  const baseArgsMatches = [
+    ...source.matchAll(
+      new RegExp(`([A-Za-z_$][\\w$]*)=${escapeRegExp(REMOTE_MOBILE_APP_SERVER_BASE_ARGS_NEEDLE)}`, "gu"),
+    ),
+  ];
+  if (baseArgsMatches.length !== 1) {
+    return source;
+  }
+
+  const baseArgsVariable = baseArgsMatches[0][1];
+  const launchFunctionMatches = [
+    ...source.matchAll(
+      new RegExp(
+        `function ([A-Za-z_$][\\w$]*)\\(\\)\\{return\\[\\.\\.\\.${escapeRegExp(baseArgsVariable)},`,
+        "gu",
+      ),
+    ),
+  ];
+  if (launchFunctionMatches.length !== 1) {
+    return source;
+  }
+
+  const launchFunctionIndex = launchFunctionMatches[0].index;
+  const nextFunctionIndex = source.indexOf("}function", launchFunctionIndex);
+  const launchTailIndex = source.indexOf(REMOTE_MOBILE_APP_SERVER_LAUNCH_TAIL, launchFunctionIndex);
+  if (launchTailIndex < 0 || (nextFunctionIndex >= 0 && launchTailIndex >= nextFunctionIndex)) {
     return source;
   }
 
   const helper =
-    "function codexLinuxRemoteMobileAppServerArgs(){return process.platform===`linux`?[`-c`,`features.code_mode_host=true`,`app-server`,`--remote-control`,`--analytics-default-enabled`]:[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`]}";
-  const replaced = source
-    .split(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE)
-    .join("codexLinuxRemoteMobileAppServerArgs()");
+    "function codexLinuxRemoteMobileLocalAppServerArgs(){return process.platform===`linux`?[`--remote-control`]:[]}";
+  const replacementTail = "`app-server`,...codexLinuxRemoteMobileLocalAppServerArgs(),`--analytics-default-enabled`]}";
+  const replaced = `${source.slice(0, launchTailIndex)}${replacementTail}${source.slice(
+    launchTailIndex + REMOTE_MOBILE_APP_SERVER_LAUNCH_TAIL.length,
+  )}`;
   // Insert after a leading "use strict" so prepending the helper does not
   // demote the directive to a plain expression and de-strict the bundle.
   const insertAt = replaced.startsWith('"use strict";')
@@ -251,22 +277,26 @@ function applyLinuxRemoteMobileAppServerRemoteControlExtractedAppPatch(extracted
     const filePath = path.join(buildDir, candidate);
     const source = fs.readFileSync(filePath, "utf8");
     if (
-      !source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE) &&
+      !source.includes(REMOTE_MOBILE_APP_SERVER_BASE_ARGS_NEEDLE) &&
       !source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)
     ) {
       continue;
     }
-    matched += 1;
     const patched = applyLinuxRemoteMobileAppServerRemoteControlPatch(source);
     if (patched !== source) {
+      matched += 1;
       fs.writeFileSync(filePath, patched, "utf8");
       changed += 1;
+    } else if (source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)) {
+      matched += 1;
     }
   }
 
   if (matched === 0) {
-    const reason = "no default app-server launch args found";
-    console.warn("WARN: Could not find default app-server launch args - skipping remote mobile app-server remote-control patch");
+    const reason = "no local Desktop app-server base args found";
+    console.warn(
+      "WARN: Could not find local Desktop app-server base args - skipping remote mobile app-server remote-control patch",
+    );
     return { matched, changed, reason };
   }
   return { matched, changed };

@@ -14,7 +14,7 @@ printf '%s\n' "remote-mobile-control" > "$feature_marker"
 install -m 0755 "$SCRIPT_DIR/linux-features/remote-mobile-control/cold-start-hook.sh" "$cold_start_hook"
 
 if [ -d "$WORK_DIR/app-extracted/.vite/build" ] &&
-    grep -R -q "codexLinuxRemoteMobileAppServerArgs" "$WORK_DIR/app-extracted/.vite/build" 2>/dev/null; then
+    grep -R -q "codexLinuxRemoteMobileLocalAppServerArgs" "$WORK_DIR/app-extracted/.vite/build" 2>/dev/null; then
     rm -f "$desktop_remote_control_marker"
     printf '%s\n' "version=1" "owner=desktop" > "$desktop_remote_control_marker"
 else
