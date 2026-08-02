@@ -5037,7 +5037,7 @@ mod tests {
     #[tokio::test]
     async fn avatar_cursor_signal_uses_the_private_unix_stream_protocol() {
         let root = std::env::temp_dir().join(format!(
-            "computer-use-avatar-cursor-{}-{}",
+            "cua-cursor-{}-{:x}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
