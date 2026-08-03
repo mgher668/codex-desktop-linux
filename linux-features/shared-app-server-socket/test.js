@@ -23,6 +23,7 @@ const {
 } = require("./patch.js");
 
 const socketEnvHook = path.join(__dirname, "socket-env.sh");
+const orphanReaper = path.join(__dirname, "orphan-reaper.js");
 
 function withFeatureConfig(enabled, callback) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-app-server-socket-feature-"));
@@ -89,6 +90,7 @@ async function stopChild(child) {
 
 function fakeChild() {
   const child = new EventEmitter();
+  child.pid = process.pid;
   child.exitCode = null;
   child.signalCode = null;
   child.stdin = new PassThrough();
@@ -173,6 +175,104 @@ async function closeServer(server) {
   await new Promise((resolve) => server.close(resolve));
 }
 
+function processStartTime(pid) {
+  try {
+    const rawStat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const commandEnd = rawStat.lastIndexOf(")");
+    if (commandEnd < 0) return null;
+    return rawStat.slice(commandEnd + 2).trim().split(/\s+/)[19] ?? null;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function unixListenerInodes(socketPath) {
+  const inodes = new Set();
+  for (const line of fs.readFileSync("/proc/net/unix", "utf8").split("\n")) {
+    const match = line.match(
+      /^\S+:\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\d+)(?:\s+(.*))?$/,
+    );
+    if (
+      match != null &&
+      match[1] === "0001" &&
+      match[2] === "01" &&
+      match[4] === socketPath
+    ) {
+      inodes.add(match[3]);
+    }
+  }
+  return [...inodes];
+}
+
+async function waitForCondition(predicate, description) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for ${description}`);
+}
+
+async function spawnOrphanAuthority(socketPath) {
+  const listenerScript = [
+    'const net=require("node:net");',
+    'const socketPath=process.argv.at(-1).replace("unix://","");',
+    "const server=net.createServer();",
+    "server.listen(socketPath);",
+    'process.on("SIGTERM",()=>server.close(()=>process.exit(0)));',
+  ].join("");
+  const wrapperScript = [
+    'const {spawn}=require("node:child_process");',
+    "const child=spawn(process.execPath,",
+    '[ "-e",process.env.LISTENER_SCRIPT,"app-server","--listen",process.env.LISTEN_URL],',
+    '{stdio:"ignore",env:process.env});',
+    'process.on("SIGTERM",()=>{',
+    '  try{child.kill("SIGTERM")}catch{}',
+    "  child.once('exit',()=>process.exit(0));",
+    "  setTimeout(()=>process.exit(0),1000).unref();",
+    "});",
+    "setInterval(()=>{},1000);",
+  ].join("");
+  const bootstrapScript = [
+    'const {spawn}=require("node:child_process");',
+    "const child=spawn(process.execPath,",
+    '[ "-e",process.env.WRAPPER_SCRIPT,"app-server","--listen",process.env.LISTEN_URL],',
+    '{detached:true,stdio:"ignore",env:process.env});',
+    "process.stdout.write(`${child.pid}\\n`);",
+    "child.unref();",
+  ].join("");
+  const result = spawnSync(process.execPath, ["-e", bootstrapScript], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LISTENER_SCRIPT: listenerScript,
+      LISTEN_URL: `unix://${socketPath}`,
+      WRAPPER_SCRIPT: wrapperScript,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const pid = Number(result.stdout.trim());
+  assert.equal(Number.isSafeInteger(pid), true);
+  const startTime = processStartTime(pid);
+  assert.notEqual(startTime, null);
+  await waitForCondition(
+    () => {
+      try {
+        const rawStat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+        const commandEnd = rawStat.lastIndexOf(")");
+        const fields = rawStat.slice(commandEnd + 2).trim().split(/\s+/);
+        return Number(fields[1]) === 1 && fs.existsSync(socketPath);
+      } catch (error) {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      }
+    },
+    "detached authority to be reparented",
+  );
+  return { pid, startTime };
+}
+
 function syntheticBundle() {
   return [
     "var gC=class{options;kind=`websocket`;logger=i.i(`AppServerTransportSshWebsocket`);proxyStreams=new Set;hasConnected=!1;supportsReconnect(){return!0}",
@@ -199,14 +299,27 @@ test("shared-app-server-socket stays disabled until explicitly enabled", () => {
   });
 });
 
-test("feature stages only the socket environment hook", () => {
+test("feature stages its socket hooks and orphan reaper", () => {
   withFeatureConfig(["shared-app-server-socket"], (featuresRoot) => {
     const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-app-server-socket-app-"));
     try {
       const plan = stageEnabledLinuxFeatureInstall(appDir, { featuresRoot });
       assert.deepEqual(
         plan.runtimeHooks.map((hook) => [hook.key, path.basename(hook.target), hook.mode.toString(8)]),
-        [["launcher", "shared-app-server-socket-socket-env.sh", "755"]],
+        [
+          ["launcher", "shared-app-server-socket-socket-env.sh", "755"],
+          ["afterExit", "shared-app-server-socket-socket-cleanup.sh", "755"],
+        ],
+      );
+      assert.deepEqual(
+        plan.resources.map((resource) => [
+          resource.target,
+          resource.mode.toString(8),
+        ]),
+        [[
+          ".codex-linux/features/shared-app-server-socket/orphan-reaper.js",
+          "644",
+        ]],
       );
     } finally {
       fs.rmSync(appDir, { recursive: true, force: true });
@@ -287,6 +400,135 @@ test("socket hook exports an instance-scoped path without starting a process", (
       `env CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET=${tempDir}/codex-bridge-test/app-server-bridge/app-server.sock`,
     );
   } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("socket hook emits no launcher environment during after-exit cleanup", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-app-server-after-exit-"));
+  const env = {
+    ...process.env,
+    CODEX_LINUX_APP_ID: "codex-bridge-test",
+    CODEX_LINUX_APP_STATE_DIR: path.join(tempDir, "state"),
+    CODEX_LINUX_FEATURE_HOOK_PHASE: "after-exit",
+    XDG_RUNTIME_DIR: tempDir,
+  };
+  delete env.CODEX_LINUX_APP_SERVER_BRIDGE_SOCKET;
+  try {
+    const result = spawnSync(socketEnvHook, [], { encoding: "utf8", env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("orphan reaper preserves a live owner and its listener", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-app-server-live-reaper-"));
+  const socketPath = path.join(tempDir, "app-server.sock");
+  const lockPath = `${socketPath}.lock`;
+  const selfStat = fs.readFileSync(`/proc/${process.pid}/stat`, "utf8");
+  const selfStartTime = selfStat.slice(selfStat.lastIndexOf(")") + 2).trim().split(/\s+/)[19];
+  const server = await listenUnix(socketPath);
+  fs.writeFileSync(lockPath, `${process.pid} ${selfStartTime}\n`, { mode: 0o600 });
+  try {
+    const result = spawnSync(process.execPath, [orphanReaper, socketPath], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(lockPath, "utf8"), `${process.pid} ${selfStartTime}\n`);
+    assert.equal(fs.lstatSync(socketPath).isSocket(), true);
+  } finally {
+    await closeServer(server);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("orphan reaper fails closed on an unknown live listener", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-app-server-foreign-reaper-"));
+  const socketPath = path.join(tempDir, "app-server.sock");
+  const lockPath = `${socketPath}.lock`;
+  const server = await listenUnix(socketPath);
+  const selfStartTime = processStartTime(process.pid);
+  fs.writeFileSync(lockPath, `99999999 1 ${process.pid} ${selfStartTime}\n`, { mode: 0o600 });
+  try {
+    const result = spawnSync(process.execPath, [orphanReaper, socketPath], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /not the expected reparented Codex process/);
+    assert.equal(
+      fs.readFileSync(lockPath, "utf8"),
+      `99999999 1 ${process.pid} ${selfStartTime}\n`,
+    );
+    assert.equal(fs.lstatSync(socketPath).isSocket(), true);
+  } finally {
+    await closeServer(server);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("orphan reaper stops an exact reparented authority and removes stale ownership", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-app-server-orphan-reaper-"));
+  const socketPath = path.join(tempDir, "app-server.sock");
+  const lockPath = `${socketPath}.lock`;
+  const orphan = await spawnOrphanAuthority(socketPath);
+  fs.writeFileSync(lockPath, `99999999 1 ${orphan.pid} ${orphan.startTime}\n`, { mode: 0o600 });
+  try {
+    const result = spawnSync(process.execPath, [orphanReaper, socketPath], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Stopped orphaned shared app-server authority/);
+    await waitForCondition(
+      () => processStartTime(orphan.pid) !== orphan.startTime,
+      "orphaned authority to exit",
+    );
+    assert.equal(fs.existsSync(socketPath), false);
+    assert.equal(fs.existsSync(lockPath), false);
+  } finally {
+    if (processStartTime(orphan.pid) === orphan.startTime) {
+      try {
+        process.kill(orphan.pid, "SIGTERM");
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("orphan reaper refuses two live listener inodes for the same pathname", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shared-app-server-rebind-reaper-"));
+  const socketPath = path.join(tempDir, "app-server.sock");
+  const lockPath = `${socketPath}.lock`;
+  const orphan = await spawnOrphanAuthority(socketPath);
+  const lockContents = `99999999 1 ${orphan.pid} ${orphan.startTime}\n`;
+  fs.writeFileSync(lockPath, lockContents, { mode: 0o600 });
+  fs.unlinkSync(socketPath);
+  const replacement = await listenUnix(socketPath);
+  try {
+    await waitForCondition(
+      () => unixListenerInodes(socketPath).length === 2,
+      "old and replacement listener inodes",
+    );
+    const result = spawnSync(process.execPath, [orphanReaper, socketPath], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /multiple live listener inodes/);
+    assert.equal(processStartTime(orphan.pid), orphan.startTime);
+    assert.equal(fs.readFileSync(lockPath, "utf8"), lockContents);
+    assert.equal(fs.lstatSync(socketPath).isSocket(), true);
+  } finally {
+    await closeServer(replacement);
+    if (processStartTime(orphan.pid) === orphan.startTime) {
+      try {
+        process.kill(orphan.pid, "SIGTERM");
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -378,6 +620,10 @@ test("injected transport serializes startup and removes only its owned socket", 
   try {
     await first.ensureAuthority();
     assert.equal(fs.existsSync(`${socketPath}.lock`), true);
+    assert.match(
+      fs.readFileSync(`${socketPath}.lock`, "utf8"),
+      new RegExp(`^${process.pid} \\d+ ${process.pid} \\d+\\n$`),
+    );
     await assert.rejects(second.ensureAuthority(), /already owned/);
 
     installReplacementBeforeChildClose = true;
@@ -604,6 +850,11 @@ test("injected transport does not release ownership until authority exit is veri
   try {
     await assert.rejects(transport.ensureAuthority(), /creation timed out/);
     assert.equal(fs.existsSync(`${socketPath}.lock`), true, "unverified child retains ownership lock");
+    assert.match(
+      fs.readFileSync(`${socketPath}.lock`, "utf8"),
+      new RegExp(`^${process.pid} \\d+ ${process.pid} \\d+\\n$`),
+      "the lock binds cleanup to the spawned authority before socket readiness",
+    );
   } finally {
     if (originalCli == null) delete process.env.CODEX_CLI_PATH;
     else process.env.CODEX_CLI_PATH = originalCli;
@@ -809,6 +1060,11 @@ for (const failure of ["error", "timeout"]) {
 
 test("socket environment hook shell syntax is valid", () => {
   const result = spawnSync("bash", ["-n", socketEnvHook], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("orphan reaper JavaScript syntax is valid", () => {
+  const result = spawnSync(process.execPath, ["--check", orphanReaper], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
 });
 
