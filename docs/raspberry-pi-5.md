@@ -86,19 +86,56 @@ The following checks passed on the test Pi:
 - workspace file creation and editing
 - integrated command execution
 - Python, SQLite, automated test, and local Git workflows
+- Chromium control through Linux Computer Use, including navigation, accessible
+  element discovery, clicking, typing, publishing, and result verification
 
 ## Optional capability results
 
-Browser Use and Computer Use were not available in the validated Pi session.
-The core workflow test did not diagnose a single cause for both features, so
-their absence should not be attributed solely to ARM64. Computer Use UI access
-can also depend on local opt-in and upstream account rollout.
+Linux Computer Use was validated end to end on the Labwc Wayland session after
+the desktop-control dependencies were completed. Initially, screenshots worked
+but accessibility discovery, window targeting, pointer input, and keyboard
+input were incomplete.
+
+The successful Pi configuration added:
+
+- `at-spi2-core` and toolkit accessibility for AT-SPI element discovery
+- `wlrctl` for window discovery and focus through Labwc's wlroots
+  foreign-toplevel interface
+- an ARM64 build of `ydotool` 1.0.3 or newer and an enabled per-user
+  `ydotoold.service`
+- membership of the desktop user in the `input` group
+- positive Chromium focus verification before keyboard injection
+
+A scoped udev rule granted the `input` group read/write access to
+`/dev/uinput`:
+
+```udev
+KERNEL=="uinput", GROUP="input", MODE="0660"
+```
+
+Debian 13 did not offer a `ydotool` package on the validated image, so
+`ydotool` and `ydotoold` were built for ARM64 and installed under
+`/usr/local/bin`. The daemon exposed its socket at
+`$XDG_RUNTIME_DIR/.ydotool_socket`. See [Linux Computer Use](linux-computer-use.md)
+for the general dependency, daemon, UI opt-in, and readiness instructions.
+
+The final test used Chromium through Linux Computer Use to open an external
+user-owned web application, inspect its accessibility tree, complete a content
+form, publish a temporary test item, and read back its public URL. One initial
+keyboard attempt reached the wrong window before explicit Chromium focus
+verification was added; the completed workflow then succeeded.
+
+Granting access to `/dev/uinput` and running `ydotoold` allows synthetic input.
+Limit access to trusted local users, keep the device rule group-scoped, and do
+not use a world-writable device mode.
 
 One known architecture-specific gap remains: the repository's Browser Use
 `node_repl` fallback resource is currently x86-64-only when no compatible
-upstream or user-supplied ARM64 binary is available. Treat Browser Use and
-Computer Use as unavailable on this validated baseline until separate ARM64
-testing demonstrates otherwise.
+upstream or user-supplied ARM64 binary is available. The Browser and Chrome
+plugins were enabled and discoverable during this test, but the demonstrated
+workflow used Chromium through Linux Computer Use. Treat Browser Use as a
+separate capability until its execution path is independently validated on
+ARM64.
 
 ## Remaining validation
 
