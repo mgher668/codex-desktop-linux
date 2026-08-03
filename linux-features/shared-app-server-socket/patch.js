@@ -19,7 +19,7 @@ function findTransportSymbols(source) {
   const [, namespace, webSocketClass, webSocketUrl] = webSocketMatch;
   const lifecycleMatch = sshClassSource.match(
     new RegExp(
-      `return ${namespace}\\.(${IDENT})\\((${IDENT}),\\{onPongTimeout:[\\s\\S]{0,160}?\\}\\),new ${namespace}\\.(${IDENT})\\(\\2\\)`,
+      `${namespace}\\.(${IDENT})\\((${IDENT}),\\{onPongTimeout:[\\s\\S]{0,220}?new ${namespace}\\.(${IDENT})\\(\\2\\)`,
     ),
   );
   if (lifecycleMatch == null) return null;
