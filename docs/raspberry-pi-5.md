@@ -121,7 +121,7 @@ for the general dependency, daemon, UI opt-in, and readiness instructions.
 
 The final test used Chromium through Linux Computer Use to open an external
 user-owned web application, inspect its accessibility tree, complete a content
-form, publish a temporary test item, and read back its public URL. One initial
+form, publish a persistent test item, and read back its public URL. One initial
 keyboard attempt reached the wrong window before explicit Chromium focus
 verification was added; the completed workflow then succeeded.
 
