@@ -87,13 +87,20 @@ The following checks passed on the test Pi:
 - integrated command execution
 - Python, SQLite, automated test, and local Git workflows
 
-## Remaining validation
+## Optional capability results
 
-The baseline proves the core desktop and Codex workflow, but it does not cover
-every optional integration. Browser Use and Computer Use should be tested and
-reported separately. In particular, the repository's Browser Use `node_repl`
-fallback resource is currently x86-64-only when no compatible upstream or
-user-supplied ARM64 binary is available.
+Browser Use and Computer Use were not available in the validated Pi session.
+The core workflow test did not diagnose a single cause for both features, so
+their absence should not be attributed solely to ARM64. Computer Use UI access
+can also depend on local opt-in and upstream account rollout.
+
+One known architecture-specific gap remains: the repository's Browser Use
+`node_repl` fallback resource is currently x86-64-only when no compatible
+upstream or user-supplied ARM64 binary is available. Treat Browser Use and
+Computer Use as unavailable on this validated baseline until separate ARM64
+testing demonstrates otherwise.
+
+## Remaining validation
 
 Long-running thermal behavior, peak memory use, and the automatic update
 manager were not measured during this first validation.
