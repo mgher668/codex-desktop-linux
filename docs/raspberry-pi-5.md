@@ -86,25 +86,27 @@ The following checks passed on the test Pi:
 - workspace file creation and editing
 - integrated command execution
 - Python, SQLite, automated test, and local Git workflows
-- Chromium control through Linux Computer Use, including navigation, accessible
-  element discovery, clicking, typing, publishing, and result verification
+- a Chromium publishing workflow using Linux Computer Use for screen capture,
+  accessible element discovery, and global pointer and keyboard input, with
+  external manual `wlrctl` shell commands for Labwc window listing and focus
 
 ## Optional capability results
 
-Linux Computer Use was validated end to end on the Labwc Wayland session after
-the desktop-control dependencies were completed. Initially, screenshots worked
-but accessibility discovery, window targeting, pointer input, and keyboard
-input were incomplete.
+A combined Chromium workflow was validated on the Labwc Wayland session after
+the desktop-control dependencies were completed. Initially, screenshots worked,
+but accessibility discovery, pointer input, and keyboard input were incomplete.
+Labwc is not currently a supported window-control backend, so window listing
+and focus were supplied separately through manual `wlrctl` shell commands.
 
 The successful Pi configuration added:
 
 - `at-spi2-core` and toolkit accessibility for AT-SPI element discovery
-- `wlrctl` for window discovery and focus through Labwc's wlroots
-  foreign-toplevel interface
+- external manual use of `wlrctl` for window listing and focus through Labwc's
+  wlroots foreign-toplevel interface; the Computer Use backend did not invoke
+  these commands
 - an ARM64 build of `ydotool` 1.0.3 or newer and an enabled per-user
   `ydotoold.service`
 - membership of the desktop user in the `input` group
-- positive Chromium focus verification before keyboard injection
 
 A scoped udev rule granted the `input` group read/write access to
 `/dev/uinput`:
@@ -117,13 +119,21 @@ Debian 13 did not offer a `ydotool` package on the validated image, so
 `ydotool` and `ydotoold` were built for ARM64 and installed under
 `/usr/local/bin`. The daemon exposed its socket at
 `$XDG_RUNTIME_DIR/.ydotool_socket`. See [Linux Computer Use](linux-computer-use.md)
-for the general dependency, daemon, UI opt-in, and readiness instructions.
+for the general dependency, daemon, UI opt-in, and supported-backend readiness
+instructions.
 
-The final test used Chromium through Linux Computer Use to open an external
-user-owned web application, inspect its accessibility tree, complete a content
-form, publish a persistent test item, and read back its public URL. One initial
-keyboard attempt reached the wrong window before explicit Chromium focus
-verification was added; the completed workflow then succeeded.
+The final test combined Linux Computer Use screen capture, AT-SPI inspection,
+and global pointer and keyboard input with external `wlrctl` shell focus to
+open an external user-owned web application, complete a content form, publish
+a persistent test item, and read back its public URL. One initial keyboard
+attempt reached the wrong window; the manual focus step was added before the
+successful retry.
+
+The public item verifies that the combined workflow published and persisted the
+result. It does not establish that the backend's built-in `list_windows`,
+`focused_window`, or targeted-input verification supported Labwc. Treat those
+window-control capabilities as unavailable on Labwc until a dedicated backend
+is implemented.
 
 Granting access to `/dev/uinput` and running `ydotoold` allows synthetic input.
 Limit access to trusted local users, keep the device rule group-scoped, and do
