@@ -30,7 +30,9 @@ function applyPatchTwice(patchFn, source) {
 }
 
 function modelCatalogFixture() {
-  return "function vbe({authMethod:e,availableModels:t,defaultModel:n,enabledReasoningEfforts:r,includeUltraReasoningEffort:i,models:a,useHiddenModels:o}){let s=[],c=null,l=o&&e!==`amazonBedrock`;return a.forEach(n=>{if(l?t.has(n.model):!n.hidden){s.push(n),n.isDefault&&(c=n)}}),c??=s.find(e=>e.model===n)??null,{models:s,defaultModel:c}}";
+  // Current upstream shape (refactored): catalog filter delegates per-model
+  // visibility to a q$r-style helper that owns the allowlist gate.
+  return "function vbe({additionalAvailableModels:e,authMethod:t,availableModels:n,defaultModel:r,enabledReasoningEfforts:i,includeUltraReasoningEffort:a,models:o,useHiddenModels:s}){let c=[],l=null;return o.forEach(r=>{if(q$r({additionalAvailableModels:e,authMethod:t,availableModels:n,model:r,useHiddenModels:s})){c.push(r),r.isDefault&&(l=r)}}),l??=c.find(e=>e.model===r)??null,{models:c,defaultModel:l}}function q$r({additionalAvailableModels:e,authMethod:t,availableModels:n,model:r,useHiddenModels:i}){return e?.has(r.model)===!0||(i&&t!==`amazonBedrock`?n.has(r.model):!r.hidden)}";
 }
 
 function serviceTierCompatibleFixture() {
@@ -107,6 +109,7 @@ test("descriptor is optional and targets app main webview chunks", () => {
     [["api-key-model-visibility-ui", "webview-asset", "optional"]],
   );
   assert.equal(descriptors[0].pattern.test("app-initial~app-main~onboarding-page-abc.js"), true);
+  assert.equal(descriptors[0].pattern.test("app-initial-iBPGfcXU.js"), true);
   assert.equal(descriptors[0].pattern.test("settings-page-abc.js"), false);
 });
 
@@ -114,7 +117,7 @@ test("API-key hosts use visible CLI models instead of the desktop allowlist", ()
   const patched = applyPatchTwice(applyApiKeyModelVisibilityPatch, modelCatalogFixture());
   const catalog = evaluateCatalog(patched, "apikey");
 
-  assert.match(patched, /e!==`apikey`\/\*codexLinuxApiKeyModelVisibility\*\//);
+  assert.match(patched, /!==`apikey`\/\*codexLinuxApiKeyModelVisibility\*\//);
   assert.deepEqual(modelNames(catalog), [
     "gpt-5.6-sol",
     "gpt-5.6-terra",
@@ -166,8 +169,8 @@ test("model visibility and API key service tier patches compose in either order"
 
 test("extended upstream model gates fail soft instead of patching mid-expression", () => {
   const source = modelCatalogFixture().replace(
-    "l=o&&e!==`amazonBedrock`;",
-    "l=o&&e!==`amazonBedrock`&&featureGate;",
+    "t!==`amazonBedrock`?n.has(r.model)",
+    "t!==`amazonBedrock`&&featureGate?n.has(r.model)",
   );
 
   assert.equal(applyApiKeyModelVisibilityPatch(source), source);
@@ -177,7 +180,7 @@ test("enabled descriptor patches a matching extracted webview asset", () => {
   withFeatureConfig(["api-key-model-visibility"], (featuresRoot) => {
     withTempDir((extractedDir) => {
       const assetsDir = path.join(extractedDir, "webview", "assets");
-      const assetPath = path.join(assetsDir, "app-initial~app-main~fixture.js");
+      const assetPath = path.join(assetsDir, "app-initial-iBPGfcXU.js");
       fs.mkdirSync(assetsDir, { recursive: true });
       fs.writeFileSync(assetPath, modelCatalogFixture());
 
