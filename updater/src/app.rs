@@ -431,6 +431,15 @@ enum CheckLockBehavior {
     Wait,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CheckCycleOptions {
+    lock_behavior: CheckLockBehavior,
+    if_stale: bool,
+    recover_entrypoint_state: bool,
+    reconcile_after_check: bool,
+    explicit_build: bool,
+}
+
 fn try_acquire_check_lock(paths: &RuntimePaths) -> Result<Option<CheckLock>> {
     let lock_path = paths.state_dir.join("check.lock");
     let mut file = OpenOptions::new()
@@ -615,11 +624,13 @@ async fn run_check_now(
         config,
         state,
         paths,
-        lock_behavior,
-        if_stale,
-        true,
-        true,
-        !if_stale,
+        CheckCycleOptions {
+            lock_behavior,
+            if_stale,
+            recover_entrypoint_state: true,
+            reconcile_after_check: true,
+            explicit_build: !if_stale,
+        },
     )
     .await
 }
@@ -1094,11 +1105,13 @@ async fn run_check_cycle_from_disk(
         config,
         state,
         paths,
-        CheckLockBehavior::SkipIfBusy,
-        false,
-        false,
-        false,
-        false,
+        CheckCycleOptions {
+            lock_behavior: CheckLockBehavior::SkipIfBusy,
+            if_stale: false,
+            recover_entrypoint_state: false,
+            reconcile_after_check: false,
+            explicit_build: false,
+        },
     )
     .await
 }
@@ -1114,11 +1127,13 @@ async fn run_check_cycle(
         config,
         state,
         paths,
-        CheckLockBehavior::SkipIfBusy,
-        false,
-        false,
-        false,
-        true,
+        CheckCycleOptions {
+            lock_behavior: CheckLockBehavior::SkipIfBusy,
+            if_stale: false,
+            recover_entrypoint_state: false,
+            reconcile_after_check: false,
+            explicit_build: true,
+        },
     )
     .await
 }
@@ -1149,13 +1164,9 @@ async fn run_check_cycle_with_options(
     config: &RuntimeConfig,
     state: &mut PersistedState,
     paths: &RuntimePaths,
-    lock_behavior: CheckLockBehavior,
-    if_stale: bool,
-    recover_entrypoint_state: bool,
-    reconcile_after_check: bool,
-    explicit_build: bool,
+    options: CheckCycleOptions,
 ) -> Result<()> {
-    let Some(_check_lock) = acquire_check_lock(paths, lock_behavior).await? else {
+    let Some(_check_lock) = acquire_check_lock(paths, options.lock_behavior).await? else {
         info!("skipping upstream check because another check is already active");
         return Ok(());
     };
@@ -1164,7 +1175,7 @@ async fn run_check_cycle_with_options(
     // below can persist the complete state document, so using a snapshot read
     // before the lock could overwrite an active checker's workspace metadata.
     reload_state_from_disk(config, state, paths)?;
-    if recover_entrypoint_state {
+    if options.recover_entrypoint_state {
         recover_interrupted_install(state, paths)?;
         complete_current_dmg_update_if_already_installed(config, state, paths)?;
         normalize_workspace_dir_and_persist(state, paths)?;
@@ -1177,7 +1188,7 @@ async fn run_check_cycle_with_options(
         warn!(?error, "wrapper update detection failed during check cycle");
     }
 
-    let build_detected_update = should_build_detected_update(explicit_build);
+    let build_detected_update = should_build_detected_update(options.explicit_build);
     if matches!(
         state.status,
         UpdateStatus::UpdateDetected | UpdateStatus::UpdateAvailable
@@ -1199,7 +1210,7 @@ async fn run_check_cycle_with_options(
             let _ = notify_failure(config, state, paths, &error);
             return Err(error);
         }
-        if reconcile_after_check {
+        if options.reconcile_after_check {
             reconcile_pending_install(config, state, paths).await?;
         }
         return Ok(());
@@ -1208,7 +1219,7 @@ async fn run_check_cycle_with_options(
     if update_install_is_pending(&state.status) {
         info!("skipping upstream check because an update is already pending");
         maybe_prune_caches(config, state);
-        if reconcile_after_check {
+        if options.reconcile_after_check {
             reconcile_pending_install(config, state, paths).await?;
         }
         return Ok(());
@@ -1221,13 +1232,13 @@ async fn run_check_cycle_with_options(
         );
     }
 
-    if if_stale
+    if options.if_stale
         && !update_check_should_retry(&state.status)
         && upstream_check_is_fresh(config, state)
     {
         info!("skipping check-now because the last successful upstream check is still fresh");
         maybe_prune_caches(config, state);
-        if reconcile_after_check {
+        if options.reconcile_after_check {
             reconcile_pending_install(config, state, paths).await?;
         }
         return Ok(());
@@ -1333,7 +1344,7 @@ async fn run_check_cycle_with_options(
         return Err(error);
     }
 
-    if reconcile_after_check {
+    if options.reconcile_after_check {
         reconcile_pending_install(config, state, paths).await?;
     }
 
@@ -2845,11 +2856,13 @@ mod tests {
                 &config,
                 &mut state,
                 &paths,
-                CheckLockBehavior::SkipIfBusy,
-                false,
-                false,
-                false,
-                false,
+                CheckCycleOptions {
+                    lock_behavior: CheckLockBehavior::SkipIfBusy,
+                    if_stale: false,
+                    recover_entrypoint_state: false,
+                    reconcile_after_check: false,
+                    explicit_build: false,
+                },
             )
             .await?;
             server.verify().await;
