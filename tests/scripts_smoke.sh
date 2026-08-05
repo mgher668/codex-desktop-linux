@@ -6545,6 +6545,9 @@ for (const required of [
   'make_tree_owner_trusted "$tmp_plugin"',
   'make_tree_owner_trusted "$cache_plugin"',
   'managed_cache_root="$codex_home/plugins/cache/openai-bundled/chrome"',
+  'managed_backup_plugin="$managed_cache_root/.chrome-$version.linux-backup.$$"',
+  'mv -T -- "$managed_cache_plugin" "$managed_backup_plugin"',
+  'previous cache was restored',
   'Chrome app-server cache refreshed from bundled resources',
   'write_chrome_native_host_manifests "$host_path" "$cache_root/latest"',
 ]) {
@@ -6615,6 +6618,7 @@ SCRIPT_DIR="$root/app"
 HOME="$root/home"
 CODEX_HOME="$HOME/.codex"
 source_plugin="$SCRIPT_DIR/resources/plugins/openai-bundled/plugins/chrome"
+source_client="$source_plugin/scripts/browser-client.mjs"
 cache_root="$CODEX_HOME/plugins/linux-runtime-cache/openai-bundled/chrome"
 cache_plugin="$cache_root/26.test"
 
@@ -6700,6 +6704,31 @@ sync_chrome_bundled_plugin_cache
 
 grep -qx trusted-module "$cache_plugin/scripts/node_modules/classic-level.mjs"
 grep -qx trusted-client "$official_client"
+
+# A failed promotion must restore the previous app-server-owned cache and must
+# not abort the cold-start sync under set -e.
+printf '%s\n' replacement-client > "$source_client"
+mv() {
+  local args=("$@")
+  local argc="${#args[@]}"
+  local source="${args[$((argc - 2))]}"
+  local destination="${args[$((argc - 1))]}"
+  if [[ "$source" == *".linux-refresh."* ]] && [ "$destination" = "$official_plugin" ]; then
+    return 73
+  fi
+  command mv "$@"
+}
+sync_chrome_bundled_plugin_cache > "$root/managed-cache-promotion-failure.log" 2>&1
+grep -qx trusted-client "$official_client"
+grep -q "previous cache was restored" "$root/managed-cache-promotion-failure.log"
+if find "$official_cache" -mindepth 1 -maxdepth 1 -type d \
+    \( -name '*.linux-refresh.*' -o -name '*.linux-backup.*' \) -print -quit | grep -q .; then
+  echo "Chrome app-server cache refresh left temporary or backup directories after restoration" >&2
+  exit 1
+fi
+unset -f mv
+printf '%s\n' trusted-client > "$source_client"
+
 for trusted_path in \
   "$CODEX_HOME" \
   "$CODEX_HOME/plugins" \
