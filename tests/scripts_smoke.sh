@@ -6544,6 +6544,8 @@ for (const required of [
   'cache_was_untrusted=1',
   'make_tree_owner_trusted "$tmp_plugin"',
   'make_tree_owner_trusted "$cache_plugin"',
+  'managed_cache_root="$codex_home/plugins/cache/openai-bundled/chrome"',
+  'Chrome app-server cache refreshed from bundled resources',
   'write_chrome_native_host_manifests "$host_path" "$cache_root/latest"',
 ]) {
   if (!chromeBody.includes(required)) {
@@ -6676,11 +6678,13 @@ chmod -R go-w "$SCRIPT_DIR"
 official_cache="$CODEX_HOME/plugins/cache/openai-bundled/chrome"
 official_plugin="$official_cache/26.test"
 official_host="$official_plugin/extension-host/linux/x64/extension-host"
-mkdir -p "$(dirname "$official_host")"
+official_client="$official_plugin/scripts/browser-client.mjs"
+mkdir -p "$(dirname "$official_host")" "$(dirname "$official_client")"
 cat > "$official_host" <<'HOST'
 #!/usr/bin/env bash
 printf '%s\n' OFFICIAL
 HOST
+printf '%s\n' stale-client > "$official_client"
 chmod 0755 "$official_host"
 ln -s 26.test "$official_cache/latest"
 chmod 0775 \
@@ -6695,6 +6699,7 @@ chmod 0775 \
 sync_chrome_bundled_plugin_cache
 
 grep -qx trusted-module "$cache_plugin/scripts/node_modules/classic-level.mjs"
+grep -qx trusted-client "$official_client"
 for trusted_path in \
   "$CODEX_HOME" \
   "$CODEX_HOME/plugins" \
