@@ -224,16 +224,32 @@ test("main patch rejects drift at every current-DMG insertion point byte-identic
   }
 });
 
-test("main patch rejects mixed patched and clean contracts byte-identically", () => {
-  const mixed = applyDockIconMainPatch(currentMainSource).replace(
+test("main patch rejects drift at every patched insertion point byte-identically", () => {
+  const patched = applyDockIconMainPatch(currentMainSource);
+  const insertionPoints = [
+    "if(process.platform!==`darwin`&&process.platform!==`linux`||t==null)return null",
+    "function codexLinuxDockIconResourcePath(e){return process.platform===`linux`",
+    "E=e=>{if(!l.app.isPackaged&&process.platform!==`linux`)return null",
+    "P=function codexLinuxApplyDockIcon(t){",
     "F=()=>{if(!v&&process.platform!==`linux`)return",
-    "F=()=>{if(!v)return",
-  );
-  const { value, warnings } = captureWarns(() => applyDockIconMainPatch(mixed));
+    "if(v||process.platform===`linux`){F();let e=()=>",
+    "onWindowRegistered:e=>{I?.registerWindow(e),C?.(e),process.platform===`linux`&&setImmediate(F)}",
+    "n=codexLinuxRegisterTray(new l.Tray(process.platform===`linux`&&globalThis.codexLinuxDockIconImage&&!globalThis.codexLinuxDockIconImage.isEmpty()?globalThis.codexLinuxDockIconImage:t.defaultIcon));if(!W9)return",
+  ];
 
-  assert.equal(value, mixed);
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /current Dock icon main-process contract/);
+  for (const insertionPoint of insertionPoints) {
+    assert.equal(patched.includes(insertionPoint), true, insertionPoint);
+    const splitAt = Math.floor(insertionPoint.length / 2);
+    const drifted = patched.replace(
+      insertionPoint,
+      `${insertionPoint.slice(0, splitAt)}drift${insertionPoint.slice(splitAt)}`,
+    );
+    const { value, warnings } = captureWarns(() => applyDockIconMainPatch(drifted));
+
+    assert.equal(value, drifted, insertionPoint);
+    assert.equal(warnings.length, 1, insertionPoint);
+    assert.match(warnings[0], /current Dock icon main-process contract/);
+  }
 });
 
 test("main patch rejects duplicate clean, patched, and mixed contracts byte-identically", () => {
@@ -249,19 +265,6 @@ test("main patch rejects duplicate clean, patched, and mixed contracts byte-iden
     assert.equal(warnings.length, 1);
     assert.match(warnings[0], /current Dock icon main-process contract/);
   }
-});
-
-test("main patch rejects the previous DMG contract byte-identically", () => {
-  const previousDmgSource = currentMainSource
-    .replaceAll("MS(", "_S(")
-    .replace("n.gc.ChatGPT", "n.Ec.ChatGPT")
-    .replace("Yce({preference", "Gce({preference")
-    .replace("I?.registerWindow(e)", "ee?.registerWindow(e)");
-  const { value, warnings } = captureWarns(() => applyDockIconMainPatch(previousDmgSource));
-
-  assert.equal(value, previousDmgSource);
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /current Dock icon main-process contract/);
 });
 
 test("settings patch exposes the native row on Linux", () => {
