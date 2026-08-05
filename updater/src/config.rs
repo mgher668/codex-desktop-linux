@@ -225,6 +225,7 @@ impl RuntimeConfig {
 
 const APP_SETTINGS_FILE: &str = "settings.json";
 pub(crate) const DEFAULT_APP_ID: &str = "codex-desktop";
+const AUTO_BUILD_UPDATES_SETTING_KEY: &str = "codex-linux-auto-build-updates";
 const AUTO_INSTALL_SETTING_KEY: &str = "codex-linux-auto-update-on-exit";
 const WRAPPER_UPDATES_SETTING_KEY: &str = "codex-linux-wrapper-updates-enabled";
 
@@ -316,6 +317,11 @@ fn settings_bool_override(key: &str) -> Option<bool> {
 /// Reads the user's auto-install-on-exit preference from the app settings.
 pub fn settings_auto_install_override() -> Option<bool> {
     settings_bool_override(AUTO_INSTALL_SETTING_KEY)
+}
+
+/// Reads whether background update checks should build detected updates.
+pub fn settings_auto_build_updates_override() -> Option<bool> {
+    settings_bool_override(AUTO_BUILD_UPDATES_SETTING_KEY)
 }
 
 /// Reads the user's opt-in wrapper update tracking preference from app settings.
@@ -451,6 +457,24 @@ app_executable_path = "/opt/codex-desktop/electron"
             override_with_settings(
                 Some(r#"{"codex-linux-auto-update-on-exit": true}"#),
                 AUTO_INSTALL_SETTING_KEY
+            ),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn auto_build_updates_override_reads_explicit_bool() {
+        assert_eq!(
+            override_with_settings(
+                Some(r#"{"codex-linux-auto-build-updates": false}"#),
+                AUTO_BUILD_UPDATES_SETTING_KEY
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            override_with_settings(
+                Some(r#"{"codex-linux-auto-build-updates": true}"#),
+                AUTO_BUILD_UPDATES_SETTING_KEY
             ),
             Some(true)
         );

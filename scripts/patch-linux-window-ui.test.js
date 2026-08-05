@@ -6696,18 +6696,20 @@ test("renders the generated Linux desktop settings page with working switches", 
     assert.ok(text.includes("Compact prompt window"));
     assert.ok(text.includes("System tray"));
     assert.ok(text.includes("Warm start"));
+    assert.ok(text.includes("Build updates automatically"));
     assert.ok(text.includes("Install updates when you close ChatGPT"));
 
     const switches = rendered.filter(
       (value) => typeof value === "object" && value.type === "button" && value.props.role === "switch",
     );
-    assert.equal(switches.length, 4);
+    assert.equal(switches.length, 5);
     assert.deepEqual(
       switches.map((element) => element.props["aria-label"]),
       [
         "Compact prompt window",
         "System tray",
         "Warm start",
+        "Build updates automatically",
         "Install updates when you close ChatGPT",
       ],
     );

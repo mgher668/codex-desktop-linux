@@ -177,6 +177,10 @@ fn effective_auto_install(config: &RuntimeConfig) -> bool {
     crate::config::settings_auto_install_override().unwrap_or(config.auto_install_on_app_exit)
 }
 
+fn should_build_detected_update(explicit_build: bool) -> bool {
+    explicit_build || crate::config::settings_auto_build_updates_override().unwrap_or(true)
+}
+
 fn sync_runtime_state(config: &RuntimeConfig, state: &mut PersistedState) {
     state.auto_install_on_app_exit = effective_auto_install(config);
     if state.status != UpdateStatus::WaitingForAppExit {
@@ -607,7 +611,17 @@ async fn run_check_now(
     } else {
         CheckLockBehavior::Wait
     };
-    run_check_cycle_with_options(config, state, paths, lock_behavior, if_stale, true, true).await
+    run_check_cycle_with_options(
+        config,
+        state,
+        paths,
+        lock_behavior,
+        if_stale,
+        true,
+        true,
+        !if_stale,
+    )
+    .await
 }
 
 /// Detects a newer wrapper release and records it into state. Returns
@@ -1084,6 +1098,7 @@ async fn run_check_cycle_from_disk(
         false,
         false,
         false,
+        false,
     )
     .await
 }
@@ -1103,8 +1118,31 @@ async fn run_check_cycle(
         false,
         false,
         false,
+        true,
     )
     .await
+}
+
+async fn build_pending_detected_update(
+    config: &RuntimeConfig,
+    state: &mut PersistedState,
+    paths: &RuntimePaths,
+) -> Result<()> {
+    let candidate_version = state
+        .candidate_version
+        .clone()
+        .context("detected update is missing its candidate version")?;
+    let dmg_path = state
+        .artifact_paths
+        .dmg_path
+        .clone()
+        .context("detected update is missing its downloaded DMG")?;
+    if !dmg_path.is_file() {
+        anyhow::bail!("detected update DMG is missing: {}", dmg_path.display());
+    }
+
+    builder::build_update(config, state, paths, &candidate_version, &dmg_path).await?;
+    maybe_notify_update_ready(state, paths, config.notifications)
 }
 
 async fn run_check_cycle_with_options(
@@ -1115,6 +1153,7 @@ async fn run_check_cycle_with_options(
     if_stale: bool,
     recover_entrypoint_state: bool,
     reconcile_after_check: bool,
+    explicit_build: bool,
 ) -> Result<()> {
     let Some(_check_lock) = acquire_check_lock(paths, lock_behavior).await? else {
         info!("skipping upstream check because another check is already active");
@@ -1136,6 +1175,34 @@ async fn run_check_cycle_with_options(
     // `status --json` could keep advertising stale wrapper candidates.
     if let Err(error) = detect_and_record_wrapper_update(config, state, paths) {
         warn!(?error, "wrapper update detection failed during check cycle");
+    }
+
+    let build_detected_update = should_build_detected_update(explicit_build);
+    if matches!(
+        state.status,
+        UpdateStatus::UpdateDetected | UpdateStatus::UpdateAvailable
+    ) {
+        if !build_detected_update {
+            if state.status != UpdateStatus::UpdateAvailable {
+                state.status = UpdateStatus::UpdateAvailable;
+                persist_state(paths, state)?;
+            }
+            info!("automatic update builds are disabled; keeping detected update pending");
+            maybe_prune_caches(config, state);
+            return Ok(());
+        }
+
+        let result = build_pending_detected_update(config, state, paths).await;
+        maybe_prune_caches(config, state);
+        if let Err(error) = result {
+            mark_failed_and_persist(state, paths, error.to_string())?;
+            let _ = notify_failure(config, state, paths, &error);
+            return Err(error);
+        }
+        if reconcile_after_check {
+            reconcile_pending_install(config, state, paths).await?;
+        }
+        return Ok(());
     }
 
     if update_install_is_pending(&state.status) {
@@ -1238,16 +1305,21 @@ async fn run_check_cycle_with_options(
             config.notifications,
             "update_detected",
             "New ChatGPT Desktop update detected",
-            "Preparing a local Linux package from the new upstream DMG.",
+            if build_detected_update {
+                "Preparing a local Linux package from the new upstream DMG."
+            } else {
+                "Automatic update builds are off. Open ChatGPT Desktop and choose Check for updates to build it."
+            },
         )?;
 
-        let candidate_version = state
-            .candidate_version
-            .clone()
-            .expect("candidate version should be set before local build");
-        builder::build_update(config, state, paths, &candidate_version, &downloaded.path).await?;
+        if !build_detected_update {
+            state.status = UpdateStatus::UpdateAvailable;
+            persist_state(paths, state)?;
+            return Ok(());
+        }
+
+        build_pending_detected_update(config, state, paths).await?;
         drop(downloaded);
-        maybe_notify_update_ready(state, paths, config.notifications)?;
         Ok(())
     }
     .await;
@@ -1608,6 +1680,7 @@ fn dmg_update_state_can_be_cleared_as_current(status: &UpdateStatus) -> bool {
     matches!(
         status,
         UpdateStatus::UpdateDetected
+            | UpdateStatus::UpdateAvailable
             | UpdateStatus::DownloadingDmg
             | UpdateStatus::PreparingWorkspace
             | UpdateStatus::PatchingApp
@@ -2318,6 +2391,7 @@ mod tests {
         for status in [
             UpdateStatus::Idle,
             UpdateStatus::CheckingUpstream,
+            UpdateStatus::UpdateAvailable,
             UpdateStatus::ReadyToInstall,
             UpdateStatus::WaitingForAppExit,
             UpdateStatus::Installing,
@@ -2720,6 +2794,85 @@ mod tests {
         assert_eq!(state.error_message, None);
         assert!(state.last_successful_check_at.is_some());
         Ok(())
+    }
+
+    #[test]
+    fn auto_build_toggle_defers_background_build_until_explicit_check() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let _restore_env = crate::test_util::EnvRestoreGuard::capture(&[
+            "CODEX_LINUX_SETTINGS_FILE",
+            "CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP",
+        ]);
+        let runtime = tokio::runtime::Runtime::new()?;
+
+        runtime.block_on(async {
+            let server = MockServer::start().await;
+            let body = b"new-codex-dmg";
+            Mock::given(method("HEAD"))
+                .and(path("/Codex.dmg"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("ETag", "\"new-dmg\"")
+                        .insert_header("Content-Length", body.len().to_string()),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/Codex.dmg"))
+                .respond_with(ResponseTemplate::new(200).set_body_bytes(body.to_vec()))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let temp = tempfile::tempdir()?;
+            let paths = test_paths(temp.path());
+            paths.ensure_dirs()?;
+            let settings_path = temp.path().join("settings.json");
+            std::fs::write(
+                &settings_path,
+                r#"{"codex-linux-auto-build-updates": false}"#,
+            )?;
+            std::env::set_var("CODEX_LINUX_SETTINGS_FILE", &settings_path);
+            std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+
+            let mut config = test_config(temp.path());
+            config.dmg_url = format!("{}/Codex.dmg", server.uri());
+            let mut state = PersistedState::new(true);
+
+            state.save(&paths.state_file)?;
+            run_check_cycle_with_options(
+                &config,
+                &mut state,
+                &paths,
+                CheckLockBehavior::SkipIfBusy,
+                false,
+                false,
+                false,
+                false,
+            )
+            .await?;
+            server.verify().await;
+
+            assert_eq!(state.status, UpdateStatus::UpdateAvailable);
+            assert!(state.candidate_version.is_some());
+            assert!(state
+                .artifact_paths
+                .dmg_path
+                .as_deref()
+                .is_some_and(Path::is_file));
+            assert_eq!(state.artifact_paths.workspace_dir, None);
+            assert_eq!(state.artifact_paths.package_path, None);
+
+            let error = run_check_now(&config, &mut state, &paths, false)
+                .await
+                .expect_err("an explicit check should enter the intentionally missing builder");
+            assert!(error
+                .to_string()
+                .contains("Required builder bundle path is missing"));
+            assert_eq!(state.status, UpdateStatus::Failed);
+            Ok(())
+        })
     }
 
     #[tokio::test]

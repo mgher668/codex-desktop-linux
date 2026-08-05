@@ -104,6 +104,9 @@ function applyWebviewRuntimePatch(source) {
 
 function applyWrapperUpdateSettingsPatch(source) {
   let next = source;
+  if (!next.includes(`autoBuildUpdates:${JSON.stringify(linuxSettingsKeys.autoBuildUpdates)}`)) {
+    throw new Error("could not find automatic update build setting");
+  }
   if (!next.includes("wrapperUpdates:")) {
     const keyNeedle = `autoUpdateOnExit:"codex-linux-auto-update-on-exit"`;
     if (!next.includes(keyNeedle)) {
@@ -127,15 +130,15 @@ function applyWrapperUpdateSettingsPatch(source) {
 
   if (!next.includes("Check for ChatGPT Desktop for Linux updates")) {
     const toggleNeedle =
-      `children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close ChatGPT",description:"When on, a ready update waits for ChatGPT to close and then installs. When off, updates wait until you click Update."})`;
+      `$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close ChatGPT",description:"When on, a ready update waits for ChatGPT to close and then installs. When off, updates wait until you click Update."})`;
     if (!next.includes(toggleNeedle)) {
       throw new Error("could not find Linux update toggle");
     }
     const pickerToggle =
       `$.jsx(LinuxToggle,{settingKey:KEYS.featurePickerOnUpdate,label:"Ask which features to enable on update",description:"When on, clicking Update opens a checklist to pick optional Linux features before rebuilding. Turn off to keep your current feature selection without prompting.",defaultValue:!0},"featurePickerOnUpdate")`;
     const wrapperToggle =
-      `children:[$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close ChatGPT",description:"When on, a ready update waits for ChatGPT to close and then installs. When off, updates wait until you click Update."},"autoUpdateOnExit"),$.jsx(LinuxToggle,{settingKey:KEYS.wrapperUpdates,label:"Check for ChatGPT Desktop for Linux updates",description:"Check for Linux wrapper updates from codex-desktop-linux in addition to upstream ChatGPT app updates.",defaultValue:!1},"wrapperUpdates"),${pickerToggle}]`;
-    next = next.replace(toggleNeedle, wrapperToggle);
+      `$.jsx(LinuxToggle,{settingKey:KEYS.wrapperUpdates,label:"Check for ChatGPT Desktop for Linux updates",description:"Check for Linux wrapper updates from codex-desktop-linux in addition to upstream ChatGPT app updates.",defaultValue:!1},"wrapperUpdates")`;
+    next = next.replace(toggleNeedle, `${toggleNeedle},${wrapperToggle},${pickerToggle}`);
   } else if (!next.includes("Ask which features to enable on update")) {
     const existingWrapperToggle =
       `$.jsx(LinuxToggle,{settingKey:KEYS.wrapperUpdates,label:"Check for ChatGPT Desktop for Linux updates",description:"Check for Linux wrapper updates from codex-desktop-linux in addition to upstream ChatGPT app updates.",defaultValue:!1},"wrapperUpdates")`;

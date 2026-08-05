@@ -22,6 +22,7 @@ pub enum UpdateStatus {
     Idle,
     CheckingUpstream,
     UpdateDetected,
+    UpdateAvailable,
     DownloadingDmg,
     PreparingWorkspace,
     PatchingApp,

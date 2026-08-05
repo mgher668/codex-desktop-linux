@@ -46,7 +46,11 @@ test("preserves wrapper updater extensions across Linux settings patch passes", 
     const settingsPath = path.join(assetsDir, linuxDesktopSettingsAsset);
     assert.match(
       fs.readFileSync(settingsPath, "utf8"),
-      /var codexLinuxDesktopSettingsVersion=1,KEYS=\{/,
+      /var codexLinuxDesktopSettingsVersion=2,KEYS=\{/,
+    );
+    assert.match(
+      fs.readFileSync(settingsPath, "utf8"),
+      /settingKey:KEYS\.autoBuildUpdates,label:"Build updates automatically"/,
     );
 
     const firstFeatureResult = patchWrapperUpdateSettingsAssets(extractedDir);
@@ -81,8 +85,8 @@ for (const [name, damage] of [
     "rejects incomplete generated Linux settings markers without writing assets",
     (source) =>
       source.replace(
-        "codexLinuxDesktopSettingsVersion=1",
         "codexLinuxDesktopSettingsVersion=2",
+        "codexLinuxDesktopSettingsVersion=3",
       ),
   ],
   [
@@ -93,6 +97,7 @@ for (const [name, damage] of [
     "promptWindow",
     "systemTray",
     "warmStart",
+    "autoBuildUpdates",
     "autoUpdateOnExit",
   ].map((key) => [
     `rejects generated Linux settings without the ${key} control`,

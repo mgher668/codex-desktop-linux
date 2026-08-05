@@ -8,6 +8,7 @@ It:
 - checks upstream `Codex.dmg` on daemon startup, every 6 hours, and in the
   background on app launch when stale
 - rebuilds a local native package with `/opt/codex-desktop/update-builder`
+  when automatic builds are enabled or the user explicitly checks for updates
 - waits for Electron to exit before installing a ready update
 - runs unprivileged; the final package install uses `pkexec` when a graphical
   polkit authentication agent is available, or keeps the package ready and
@@ -174,6 +175,23 @@ Runtime files:
 ~/.cache/codex-desktop/launcher.log
 ~/.local/state/codex-desktop/app.pid
 ```
+
+## Update Preferences
+
+The Linux desktop settings page exposes two independent update controls:
+
+- **Build updates automatically** defaults on. When off, background checks
+  detect and download a new upstream DMG, leave the updater in
+  `update_available`, and notify without starting the local package build.
+  Choosing **Check for updates** explicitly starts the pending build.
+- **Install updates when you close ChatGPT** controls only installation after a
+  package has been built. When off, a ready package waits for the user to choose
+  **Update**.
+
+Detection still downloads the DMG because its content hash is the updater's
+authoritative release identity. Disabling automatic builds avoids Electron,
+native-module, and package rebuild work; it does not turn update checks into a
+metadata-only request.
 
 ## Generated Artifact Cleanup
 
