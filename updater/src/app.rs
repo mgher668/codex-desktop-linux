@@ -177,8 +177,8 @@ fn effective_auto_install(config: &RuntimeConfig) -> bool {
     crate::config::settings_auto_install_override().unwrap_or(config.auto_install_on_app_exit)
 }
 
-fn should_build_detected_update(explicit_build: bool) -> bool {
-    explicit_build || crate::config::settings_auto_build_updates_override().unwrap_or(true)
+fn should_build_detected_update(config: &RuntimeConfig, explicit_build: bool) -> bool {
+    explicit_build || crate::config::settings_auto_build_updates_override(config).unwrap_or(true)
 }
 
 fn sync_runtime_state(config: &RuntimeConfig, state: &mut PersistedState) {
@@ -1188,33 +1188,7 @@ async fn run_check_cycle_with_options(
         warn!(?error, "wrapper update detection failed during check cycle");
     }
 
-    let build_detected_update = should_build_detected_update(options.explicit_build);
-    if matches!(
-        state.status,
-        UpdateStatus::UpdateDetected | UpdateStatus::UpdateAvailable
-    ) {
-        if !build_detected_update {
-            if state.status != UpdateStatus::UpdateAvailable {
-                state.status = UpdateStatus::UpdateAvailable;
-                persist_state(paths, state)?;
-            }
-            info!("automatic update builds are disabled; keeping detected update pending");
-            maybe_prune_caches(config, state);
-            return Ok(());
-        }
-
-        let result = build_pending_detected_update(config, state, paths).await;
-        maybe_prune_caches(config, state);
-        if let Err(error) = result {
-            mark_failed_and_persist(state, paths, error.to_string())?;
-            let _ = notify_failure(config, state, paths, &error);
-            return Err(error);
-        }
-        if options.reconcile_after_check {
-            reconcile_pending_install(config, state, paths).await?;
-        }
-        return Ok(());
-    }
+    let build_detected_update = should_build_detected_update(config, options.explicit_build);
 
     if update_install_is_pending(&state.status) {
         info!("skipping upstream check because an update is already pending");
@@ -1304,6 +1278,7 @@ async fn run_check_cycle_with_options(
 
         rollback::record_current_package_as_known_good(state);
         state.status = UpdateStatus::UpdateDetected;
+        state.deferred_build = !build_detected_update;
         state.candidate_version = Some(downloaded.candidate_version.clone());
         state.dmg_sha256 = Some(downloaded.sha256.clone());
         state.artifact_paths.dmg_path = Some(downloaded.path.clone());
@@ -1324,8 +1299,7 @@ async fn run_check_cycle_with_options(
         )?;
 
         if !build_detected_update {
-            state.status = UpdateStatus::UpdateAvailable;
-            persist_state(paths, state)?;
+            info!("automatic update builds are disabled; keeping the current DMG pending");
             return Ok(());
         }
 
@@ -1691,7 +1665,6 @@ fn dmg_update_state_can_be_cleared_as_current(status: &UpdateStatus) -> bool {
     matches!(
         status,
         UpdateStatus::UpdateDetected
-            | UpdateStatus::UpdateAvailable
             | UpdateStatus::DownloadingDmg
             | UpdateStatus::PreparingWorkspace
             | UpdateStatus::PatchingApp
@@ -1711,6 +1684,7 @@ fn clear_dmg_update_candidate(
 ) -> Result<()> {
     state.status = UpdateStatus::Idle;
     state.waiting_for_app_exit_auto_install = false;
+    state.deferred_build = false;
     state.candidate_version = None;
     if let Some(sha256) = sha256 {
         state.dmg_sha256 = Some(sha256);
@@ -2359,6 +2333,61 @@ mod tests {
         Ok(())
     }
 
+    fn configure_deferred_build_feature(
+        root: &Path,
+        config: &RuntimeConfig,
+        enabled: bool,
+        auto_build: bool,
+    ) -> Result<PathBuf> {
+        let settings_path = root.join("settings.json");
+        let enabled_features = if enabled {
+            r#"["deferred-update-build"]"#
+        } else {
+            "[]"
+        };
+        let policy_path = config
+            .builder_bundle_root
+            .join("linux-features/deferred-update-build/updater-policy.json");
+        std::fs::create_dir_all(
+            policy_path
+                .parent()
+                .expect("policy path should have parent"),
+        )?;
+        std::fs::write(
+            policy_path,
+            r#"{"schemaVersion":1,"autoBuildUpdatesSettingKey":"codex-linux-auto-build-updates"}"#,
+        )?;
+        std::fs::write(
+            root.join("linux-features.json"),
+            format!(r#"{{"enabled":{enabled_features}}}"#),
+        )?;
+        std::fs::write(
+            &settings_path,
+            format!(r#"{{"codex-linux-auto-build-updates":{auto_build}}}"#),
+        )?;
+        std::env::set_var("CODEX_LINUX_SETTINGS_FILE", &settings_path);
+        Ok(settings_path)
+    }
+
+    async fn mount_dmg(server: &MockServer, etag: &str, body: &[u8]) {
+        Mock::given(method("HEAD"))
+            .and(path("/Codex.dmg"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("ETag", etag)
+                    .insert_header("Content-Length", body.len().to_string()),
+            )
+            .expect(1)
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/Codex.dmg"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(body.to_vec()))
+            .expect(1)
+            .mount(server)
+            .await;
+    }
+
     #[test]
     fn upstream_check_freshness_respects_configured_interval() {
         let config = RuntimeConfig {
@@ -2402,7 +2431,6 @@ mod tests {
         for status in [
             UpdateStatus::Idle,
             UpdateStatus::CheckingUpstream,
-            UpdateStatus::UpdateAvailable,
             UpdateStatus::ReadyToInstall,
             UpdateStatus::WaitingForAppExit,
             UpdateStatus::Installing,
@@ -2808,7 +2836,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_build_toggle_defers_background_build_until_explicit_check() -> Result<()> {
+    fn deferred_candidate_is_revalidated_before_explicit_build() -> Result<()> {
         let _env_guard = crate::test_util::env_lock();
         let _restore_env = crate::test_util::EnvRestoreGuard::capture(&[
             "CODEX_LINUX_SETTINGS_FILE",
@@ -2818,37 +2846,18 @@ mod tests {
 
         runtime.block_on(async {
             let server = MockServer::start().await;
-            let body = b"new-codex-dmg";
-            Mock::given(method("HEAD"))
-                .and(path("/Codex.dmg"))
-                .respond_with(
-                    ResponseTemplate::new(200)
-                        .insert_header("ETag", "\"new-dmg\"")
-                        .insert_header("Content-Length", body.len().to_string()),
-                )
-                .expect(1)
-                .mount(&server)
-                .await;
-            Mock::given(method("GET"))
-                .and(path("/Codex.dmg"))
-                .respond_with(ResponseTemplate::new(200).set_body_bytes(body.to_vec()))
-                .expect(1)
-                .mount(&server)
-                .await;
+            let candidate_a = b"candidate-a";
+            let candidate_b = b"candidate-b";
+            mount_dmg(&server, "\"candidate-a\"", candidate_a).await;
 
             let temp = tempfile::tempdir()?;
             let paths = test_paths(temp.path());
             paths.ensure_dirs()?;
-            let settings_path = temp.path().join("settings.json");
-            std::fs::write(
-                &settings_path,
-                r#"{"codex-linux-auto-build-updates": false}"#,
-            )?;
-            std::env::set_var("CODEX_LINUX_SETTINGS_FILE", &settings_path);
             std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", "1");
 
             let mut config = test_config(temp.path());
             config.dmg_url = format!("{}/Codex.dmg", server.uri());
+            configure_deferred_build_feature(temp.path(), &config, true, false)?;
             let mut state = PersistedState::new(true);
 
             state.save(&paths.state_file)?;
@@ -2865,17 +2874,21 @@ mod tests {
                 },
             )
             .await?;
-            server.verify().await;
-
-            assert_eq!(state.status, UpdateStatus::UpdateAvailable);
+            assert_eq!(state.status, UpdateStatus::UpdateDetected);
+            assert!(state.deferred_build);
             assert!(state.candidate_version.is_some());
-            assert!(state
+            let candidate_a_path = state
                 .artifact_paths
                 .dmg_path
-                .as_deref()
-                .is_some_and(Path::is_file));
+                .clone()
+                .context("deferred candidate should retain its DMG")?;
+            assert_eq!(std::fs::read(&candidate_a_path)?, candidate_a);
             assert_eq!(state.artifact_paths.workspace_dir, None);
             assert_eq!(state.artifact_paths.package_path, None);
+
+            server.verify().await;
+            server.reset().await;
+            mount_dmg(&server, "\"candidate-b\"", candidate_b).await;
 
             let error = run_check_now(&config, &mut state, &paths, false)
                 .await
@@ -2884,6 +2897,147 @@ mod tests {
                 .to_string()
                 .contains("Required builder bundle path is missing"));
             assert_eq!(state.status, UpdateStatus::Failed);
+            assert!(!state.deferred_build);
+            let candidate_b_path = state
+                .artifact_paths
+                .dmg_path
+                .as_deref()
+                .context("explicit build should retain the revalidated DMG")?;
+            assert_ne!(candidate_b_path, candidate_a_path);
+            assert_eq!(std::fs::read(candidate_b_path)?, candidate_b);
+            server.verify().await;
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn explicit_check_redownloads_a_deleted_deferred_dmg() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let _restore_env = crate::test_util::EnvRestoreGuard::capture(&[
+            "CODEX_LINUX_SETTINGS_FILE",
+            "CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP",
+        ]);
+        let runtime = tokio::runtime::Runtime::new()?;
+
+        runtime.block_on(async {
+            let server = MockServer::start().await;
+            let body = b"candidate-a";
+            mount_dmg(&server, "\"candidate-a\"", body).await;
+            let temp = tempfile::tempdir()?;
+            let paths = test_paths(temp.path());
+            paths.ensure_dirs()?;
+            std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+            let mut config = test_config(temp.path());
+            config.dmg_url = format!("{}/Codex.dmg", server.uri());
+            configure_deferred_build_feature(temp.path(), &config, true, false)?;
+            let mut state = PersistedState::new(true);
+            state.save(&paths.state_file)?;
+
+            run_check_cycle_with_options(
+                &config,
+                &mut state,
+                &paths,
+                CheckCycleOptions {
+                    lock_behavior: CheckLockBehavior::SkipIfBusy,
+                    if_stale: false,
+                    recover_entrypoint_state: false,
+                    reconcile_after_check: false,
+                    explicit_build: false,
+                },
+            )
+            .await?;
+            let dmg_path = state
+                .artifact_paths
+                .dmg_path
+                .clone()
+                .context("deferred candidate should retain its DMG")?;
+            std::fs::remove_file(&dmg_path)?;
+
+            server.verify().await;
+            server.reset().await;
+            mount_dmg(&server, "\"candidate-a\"", body).await;
+            let error = run_check_now(&config, &mut state, &paths, false)
+                .await
+                .expect_err("the redownload should reach the intentionally missing builder");
+            assert!(error
+                .to_string()
+                .contains("Required builder bundle path is missing"));
+            assert_eq!(std::fs::read(&dmg_path)?, body);
+            assert!(!state.deferred_build);
+            server.verify().await;
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn disabling_feature_builds_a_persisted_deferred_candidate() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let _restore_env = crate::test_util::EnvRestoreGuard::capture(&[
+            "CODEX_LINUX_SETTINGS_FILE",
+            "CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP",
+        ]);
+        let runtime = tokio::runtime::Runtime::new()?;
+
+        runtime.block_on(async {
+            let server = MockServer::start().await;
+            let body = b"candidate-a";
+            mount_dmg(&server, "\"candidate-a\"", body).await;
+            let temp = tempfile::tempdir()?;
+            let paths = test_paths(temp.path());
+            paths.ensure_dirs()?;
+            std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+            let mut config = test_config(temp.path());
+            config.dmg_url = format!("{}/Codex.dmg", server.uri());
+            configure_deferred_build_feature(temp.path(), &config, true, false)?;
+            let mut state = PersistedState::new(true);
+            state.save(&paths.state_file)?;
+
+            run_check_cycle_with_options(
+                &config,
+                &mut state,
+                &paths,
+                CheckCycleOptions {
+                    lock_behavior: CheckLockBehavior::SkipIfBusy,
+                    if_stale: false,
+                    recover_entrypoint_state: false,
+                    reconcile_after_check: false,
+                    explicit_build: false,
+                },
+            )
+            .await?;
+            assert!(state.deferred_build);
+
+            let mut persisted = serde_json::to_value(&state)?;
+            persisted["status"] = serde_json::Value::String("update_available".to_string());
+            persisted
+                .as_object_mut()
+                .expect("state should serialize as an object")
+                .remove("deferred_build");
+            std::fs::write(&paths.state_file, serde_json::to_vec_pretty(&persisted)?)?;
+            std::fs::write(temp.path().join("linux-features.json"), r#"{"enabled":[]}"#)?;
+            server.verify().await;
+            server.reset().await;
+            mount_dmg(&server, "\"candidate-a\"", body).await;
+
+            let error = run_check_cycle_with_options(
+                &config,
+                &mut state,
+                &paths,
+                CheckCycleOptions {
+                    lock_behavior: CheckLockBehavior::SkipIfBusy,
+                    if_stale: false,
+                    recover_entrypoint_state: false,
+                    reconcile_after_check: false,
+                    explicit_build: false,
+                },
+            )
+            .await
+            .expect_err("disabling the feature should restore automatic builds");
+            assert!(error
+                .to_string()
+                .contains("Required builder bundle path is missing"));
+            assert!(!state.deferred_build);
+            server.verify().await;
             Ok(())
         })
     }

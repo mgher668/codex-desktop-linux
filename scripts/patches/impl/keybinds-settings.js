@@ -22,7 +22,7 @@ const linuxDesktopSettingsAsset = "linux-desktop-settings-linux.js";
 const linuxKeybindOverridesKey = "codex-linux-keybind-overrides";
 const linuxReactRuntimeExport = "codexLinuxReact";
 const linuxJsxRuntimeExport = "codexLinuxJsx";
-const linuxDesktopSettingsSourceVersion = 2;
+const linuxDesktopSettingsSourceVersion = 1;
 const linuxDesktopSettingsSourceMarker =
   `var codexLinuxDesktopSettingsVersion=${linuxDesktopSettingsSourceVersion},KEYS={`;
 
@@ -37,37 +37,6 @@ function linuxBuildInfoPanelSource() {
 
 function linuxDesktopSettingsControlsSource() {
   return `function codexLinuxChecked(next){return next&&typeof next=="object"&&next.target&&typeof next.target.checked=="boolean"?next.target.checked:next===!0}class LinuxToggle extends React.Component{constructor(props){super(props),this._alive=!1,this.state={value:props.defaultValue??!0,isLoading:!0,error:null},this.load=this.load.bind(this),this.update=this.update.bind(this)}componentDidMount(){this._alive=!0,this.load()}componentDidUpdate(previous){(previous.settingKey!==this.props.settingKey||previous.defaultValue!==this.props.defaultValue)&&this.load()}componentWillUnmount(){this._alive=!1}load(){let{settingKey:key,defaultValue=!0}=this.props;this.setState({isLoading:!0}),__post("get-global-state",{params:{key}}).then(result=>{this._alive&&this.setState({value:result?.value??defaultValue,error:null})}).catch(err=>{this._alive&&this.setState({error:err instanceof Error?err.message:String(err)})}).finally(()=>{this._alive&&this.setState({isLoading:!1})})}update(next){let value=codexLinuxChecked(next),previous=this.state.value,{settingKey:key}=this.props;this.setState({value,error:null}),__post("set-global-state",{params:{key,value}}).catch(err=>{this._alive&&this.setState({value:previous,error:err instanceof Error?err.message:String(err)})})}render(){let{label,description}=this.props,{value,isLoading,error}=this.state,details=error?$.jsxs("div",{className:"flex flex-col gap-1",children:[$.jsx("span",{children:description}),$.jsx("span",{className:"text-token-error-foreground",children:error})]}):description;return $.jsx(SettingsRow,{label,description:details,control:$.jsx(Toggle,{checked:value,disabled:isLoading,onChange:this.update,ariaLabel:label})})}}`;
-}
-
-function addAutoBuildUpdatesSetting(source) {
-  const keysNeedle =
-    `warmStart:${JSON.stringify(linuxSettingsKeys.warmStart)},` +
-    `autoUpdateOnExit:${JSON.stringify(linuxSettingsKeys.autoUpdateOnExit)}`;
-  const keysReplacement =
-    `warmStart:${JSON.stringify(linuxSettingsKeys.warmStart)},` +
-    `autoBuildUpdates:${JSON.stringify(linuxSettingsKeys.autoBuildUpdates)},` +
-    `autoUpdateOnExit:${JSON.stringify(linuxSettingsKeys.autoUpdateOnExit)}`;
-  const controlsNeedle =
-    `children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,` +
-    `label:"Install updates when you close ChatGPT",` +
-    `description:"When on, a ready update waits for ChatGPT to close and then installs. ` +
-    `When off, updates wait until you click Update."})`;
-  const controlsReplacement =
-    `children:[$.jsx(LinuxToggle,{settingKey:KEYS.autoBuildUpdates,` +
-    `label:"Build updates automatically",` +
-    `description:"When on, background checks build detected updates. When off, they only notify you; ` +
-    `Check for updates starts the build."}),` +
-    `$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,` +
-    `label:"Install updates when you close ChatGPT",` +
-    `description:"When on, a ready update waits for ChatGPT to close and then installs. ` +
-    `When off, updates wait until you click Update."})]`;
-
-  if (!source.includes(keysNeedle) || !source.includes(controlsNeedle)) {
-    throw new Error("Required Keybinds settings patch failed: could not add automatic update build control");
-  }
-  return source
-    .replace(keysNeedle, keysReplacement)
-    .replace(controlsNeedle, controlsReplacement);
 }
 
 function buildKeybindsSettingsSource({
@@ -535,9 +504,10 @@ function resolveLinuxDesktopSettingsAsset(extractedDir) {
     includeHotkeySettings: false,
   });
 
-  const source = addAutoBuildUpdatesSetting(
-    buildLinuxDesktopSettingsSource(dependencies),
-  ).replace("var KEYS={", linuxDesktopSettingsSourceMarker);
+  const source = buildLinuxDesktopSettingsSource(dependencies).replace(
+    "var KEYS={",
+    linuxDesktopSettingsSourceMarker,
+  );
   return {
     filePath: path.join(webviewAssetsDir, linuxDesktopSettingsAsset),
     source,
@@ -845,7 +815,6 @@ function hasCompleteLinuxDesktopSettingsSource(previousSource) {
     `promptWindow:${JSON.stringify(linuxSettingsKeys.promptWindow)}`,
     `systemTray:${JSON.stringify(linuxSettingsKeys.systemTray)}`,
     `warmStart:${JSON.stringify(linuxSettingsKeys.warmStart)}`,
-    `autoBuildUpdates:${JSON.stringify(linuxSettingsKeys.autoBuildUpdates)}`,
     `autoUpdateOnExit:${JSON.stringify(linuxSettingsKeys.autoUpdateOnExit)}`,
     "function codexLinuxChecked(",
     "class LinuxToggle extends React.Component",
@@ -861,7 +830,6 @@ function hasCompleteLinuxDesktopSettingsSource(previousSource) {
     "settingKey:KEYS.promptWindow",
     "settingKey:KEYS.systemTray",
     "settingKey:KEYS.warmStart",
-    "settingKey:KEYS.autoBuildUpdates",
     "settingKey:KEYS.autoUpdateOnExit",
     "$.jsx(LinuxBuildInfoPanel,{})",
   ];

@@ -6696,20 +6696,18 @@ test("renders the generated Linux desktop settings page with working switches", 
     assert.ok(text.includes("Compact prompt window"));
     assert.ok(text.includes("System tray"));
     assert.ok(text.includes("Warm start"));
-    assert.ok(text.includes("Build updates automatically"));
     assert.ok(text.includes("Install updates when you close ChatGPT"));
 
     const switches = rendered.filter(
       (value) => typeof value === "object" && value.type === "button" && value.props.role === "switch",
     );
-    assert.equal(switches.length, 5);
+    assert.equal(switches.length, 4);
     assert.deepEqual(
       switches.map((element) => element.props["aria-label"]),
       [
         "Compact prompt window",
         "System tray",
         "Warm start",
-        "Build updates automatically",
         "Install updates when you close ChatGPT",
       ],
     );
@@ -7814,6 +7812,8 @@ test("adds Linux package updater to current bootstrap updater wiring", () => {
   assert.doesNotMatch(patched, /__codexChild\.execFile\(codexLinuxUpdateManagerPath\(\)/);
   assert.match(patched, /codexLinuxRunUpdateManager\(\[`--help`\]\)/);
   assert.match(patched, /async function codexLinuxRefreshUpdateState\(\)\{return codexLinuxReadUpdateState\(\)\}/);
+  assert.match(patched, /codexLinuxUpdateLifecycleState\(r,e\)/);
+  assert.match(patched, /e===`update_detected`&&t\?\.deferred_build===!0/);
   assert.match(patched, /codexLinuxProbeUpdateManager\(\)\.then\(\(\)=>\{s=!0,i\(\),a\(\);return!0\}\)/);
   assert.match(patched, /manager:\{setAutomaticBackgroundDownloadsEnabled:\(\)=>\{\}/);
   assert.match(patched, /getIsUpdateReady:\(\)=>s&&t/);

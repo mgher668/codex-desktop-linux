@@ -111,8 +111,8 @@ test("webview runtime is not swallowed by a trailing sourcemap comment", () => {
 
 test("settings patch adds wrapper update toggle", () => {
   const source =
-    `var KEYS={autoBuildUpdates:"codex-linux-auto-build-updates",autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
-    `function Settings(){return $.jsx(SettingsGroup,{children:[$.jsx(LinuxToggle,{settingKey:KEYS.autoBuildUpdates,label:"Build updates automatically",description:"When on, background checks build detected updates. When off, they only notify you; Check for updates starts the build."}),$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close ChatGPT",description:"When on, a ready update waits for ChatGPT to close and then installs. When off, updates wait until you click Update."})]})}`;
+    `var KEYS={autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
+    `function Settings(){return $.jsx(SettingsGroup,{children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close ChatGPT",description:"When on, a ready update waits for ChatGPT to close and then installs. When off, updates wait until you click Update."})})}`;
 
   const patched = applyWrapperUpdateSettingsPatch(source);
 
@@ -150,8 +150,8 @@ test("settings asset patch prefers generated Linux desktop settings bundle", () 
   const assetsDir = path.join(appDir, "webview", "assets");
   fs.mkdirSync(assetsDir, { recursive: true });
   const linuxDesktopSettings =
-    `var KEYS={autoBuildUpdates:"codex-linux-auto-build-updates",autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
-    `function Settings(){return $.jsx(SettingsGroup,{children:[$.jsx(LinuxToggle,{settingKey:KEYS.autoBuildUpdates,label:"Build updates automatically",description:"When on, background checks build detected updates. When off, they only notify you; Check for updates starts the build."}),$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close ChatGPT",description:"When on, a ready update waits for ChatGPT to close and then installs. When off, updates wait until you click Update."})]})}`;
+    `var KEYS={autoUpdateOnExit:"codex-linux-auto-update-on-exit"};` +
+    `function Settings(){return $.jsx(SettingsGroup,{children:$.jsx(LinuxToggle,{settingKey:KEYS.autoUpdateOnExit,label:"Install updates when you close ChatGPT",description:"When on, a ready update waits for ChatGPT to close and then installs. When off, updates wait until you click Update."})})}`;
   const generalSettings = `function Br(){return null}`;
   fs.writeFileSync(path.join(assetsDir, "linux-desktop-settings-linux.js"), linuxDesktopSettings);
   fs.writeFileSync(path.join(assetsDir, "general-settings-z.js"), generalSettings);
@@ -184,7 +184,7 @@ test("settings asset patch leaves current asset unchanged on synthetic drift", (
     assert.deepEqual(withoutWarnings(() => patchWrapperUpdateSettingsAssets(appDir)), {
       matched: false,
       changed: 0,
-      reason: "could not find automatic update build setting",
+      reason: "could not find Linux update toggle",
     });
     assert.equal(fs.readFileSync(settingsPath, "utf8"), driftedSettings);
   } finally {

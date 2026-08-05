@@ -104,9 +104,6 @@ function applyWebviewRuntimePatch(source) {
 
 function applyWrapperUpdateSettingsPatch(source) {
   let next = source;
-  if (!next.includes(`autoBuildUpdates:${JSON.stringify(linuxSettingsKeys.autoBuildUpdates)}`)) {
-    throw new Error("could not find automatic update build setting");
-  }
   if (!next.includes("wrapperUpdates:")) {
     const keyNeedle = `autoUpdateOnExit:"codex-linux-auto-update-on-exit"`;
     if (!next.includes(keyNeedle)) {
@@ -138,7 +135,10 @@ function applyWrapperUpdateSettingsPatch(source) {
       `$.jsx(LinuxToggle,{settingKey:KEYS.featurePickerOnUpdate,label:"Ask which features to enable on update",description:"When on, clicking Update opens a checklist to pick optional Linux features before rebuilding. Turn off to keep your current feature selection without prompting.",defaultValue:!0},"featurePickerOnUpdate")`;
     const wrapperToggle =
       `$.jsx(LinuxToggle,{settingKey:KEYS.wrapperUpdates,label:"Check for ChatGPT Desktop for Linux updates",description:"Check for Linux wrapper updates from codex-desktop-linux in addition to upstream ChatGPT app updates.",defaultValue:!1},"wrapperUpdates")`;
-    next = next.replace(toggleNeedle, `${toggleNeedle},${wrapperToggle},${pickerToggle}`);
+    const singleToggleNeedle = `children:${toggleNeedle}`;
+    next = next.includes(singleToggleNeedle)
+      ? next.replace(singleToggleNeedle, `children:[${toggleNeedle},${wrapperToggle},${pickerToggle}]`)
+      : next.replace(toggleNeedle, `${toggleNeedle},${wrapperToggle},${pickerToggle}`);
   } else if (!next.includes("Ask which features to enable on update")) {
     const existingWrapperToggle =
       `$.jsx(LinuxToggle,{settingKey:KEYS.wrapperUpdates,label:"Check for ChatGPT Desktop for Linux updates",description:"Check for Linux wrapper updates from codex-desktop-linux in addition to upstream ChatGPT app updates.",defaultValue:!1},"wrapperUpdates")`;
