@@ -45,10 +45,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - Deferred upstream DMGs are revalidated before a build. A newer candidate
   supersedes the pending download, and a deleted cached DMG is redownloaded in
-  the same explicit check. The optional state marker retains the existing
-  `update_detected` status so updater 0.10.x can read the state and resume its
-  previous automatic-build behavior. State written by prerelease builds using
-  `update_available` is migrated back to `update_detected` on read.
+  the same explicit check. Fresh app-launch checks preserve the stable deferred
+  candidate without an upstream DMG request; stale checks use HEAD and reuse a valid
+  unchanged cached DMG, while offline checks leave it pending. The optional
+  state marker retains the existing `update_detected` status so updater 0.10.x
+  can read the state and resume its previous automatic-build behavior. State
+  written by prerelease builds using `update_available` is migrated back to
+  `update_detected` on read.
 - Native X11 coordinate clicks now use one supervised xdotool XTEST command,
   fall back to ydotool only when xdotool cannot launch, and preserve nested X11
   session identity instead of importing a host Wayland display.

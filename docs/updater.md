@@ -190,6 +190,10 @@ download, and notify about the newest upstream DMG without starting the local
 package build. Choosing **Check for updates** revalidates upstream and builds
 the current DMG. If upstream replaced the candidate or the cached file was
 removed, that same check downloads the current DMG before building it.
+Fresh app-launch checks keep a deferred candidate without an upstream DMG
+request. Once the normal check interval expires, the updater uses HEAD to confirm
+its identity and reuses the cached DMG without downloading it again; an offline
+background check leaves the deferred candidate pending.
 
 Detection still downloads the DMG because its content hash is the updater's
 authoritative release identity. Disabling automatic builds avoids Electron,

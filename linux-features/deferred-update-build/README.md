@@ -13,6 +13,11 @@ newer DMG replaces it or the cached file is removed, the same check downloads
 the current DMG before continuing. Disabling this feature immediately restores
 automatic builds, including for an already deferred candidate.
 
+App-launch `--if-stale` checks treat a deferred candidate as stable. A fresh
+check performs no upstream DMG request; after the check interval, an unchanged HEAD
+reuses the valid cached DMG without GET. Offline background checks preserve the
+pending candidate.
+
 Enable it in the gitignored `linux-features/features.json` file:
 
 ```json
