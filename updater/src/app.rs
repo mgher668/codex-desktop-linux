@@ -1211,7 +1211,10 @@ async fn run_check_cycle_with_options(
         );
     }
 
+    let stable_deferred = stable_deferred_candidate(state);
+
     if options.if_stale
+        && !(stable_deferred && build_detected_update)
         && !update_check_should_retry(state)
         && upstream_check_is_fresh(config, state)
     {
@@ -1223,9 +1226,8 @@ async fn run_check_cycle_with_options(
         return Ok(());
     }
 
-    let stable_deferred = stable_deferred_candidate(state);
     let deferred_refresh_snapshot =
-        (options.if_stale && stable_deferred && !build_detected_update).then(|| state.clone());
+        (stable_deferred && !build_detected_update).then(|| state.clone());
     let client = upstream::http_client()?;
 
     let retrying_update = prepare_upstream_check(state, paths)?;
@@ -2643,7 +2645,67 @@ mod tests {
     }
 
     #[test]
-    fn offline_if_stale_check_preserves_deferred_candidate() -> Result<()> {
+    fn fresh_deferred_candidate_builds_when_automatic_builds_resume() -> Result<()> {
+        let _env_guard = crate::test_util::env_lock();
+        let _restore_env = crate::test_util::EnvRestoreGuard::capture(&[
+            "CODEX_LINUX_SETTINGS_FILE",
+            "CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP",
+        ]);
+        let runtime = tokio::runtime::Runtime::new()?;
+
+        runtime.block_on(async {
+            let server = MockServer::start().await;
+            let body = b"candidate-a";
+            Mock::given(method("HEAD"))
+                .and(path("/Codex.dmg"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("ETag", "\"candidate-a\"")
+                        .insert_header("Content-Length", body.len().to_string()),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let temp = tempfile::tempdir()?;
+            let paths = test_paths(temp.path());
+            paths.ensure_dirs()?;
+            std::env::set_var("CODEX_UPDATE_MANAGER_SKIP_SYSTEM_CLI_LOOKUP", "1");
+            let mut config = test_config(temp.path());
+            config.dmg_url = format!("{}/Codex.dmg", server.uri());
+            configure_deferred_build_feature(temp.path(), &config, true, true)?;
+
+            let dmg_path = temp.path().join("cached-candidate.dmg");
+            std::fs::write(&dmg_path, body)?;
+            let mut state = PersistedState::new(true);
+            state.status = UpdateStatus::UpdateDetected;
+            state.deferred_build = true;
+            state.candidate_version = Some("candidate-a".to_string());
+            state.dmg_sha256 = Some("candidate-a-sha".to_string());
+            state.artifact_paths.dmg_path = Some(dmg_path);
+            state.remote_headers_fingerprint = Some(format!(
+                "etag=\"candidate-a\"|last_modified=|content_length={}",
+                body.len()
+            ));
+            state.last_successful_check_at = Some(Utc::now());
+            state.save(&paths.state_file)?;
+
+            let error = run_check_now(&config, &mut state, &paths, true)
+                .await
+                .expect_err("resumed automatic builds should reach the missing test builder");
+
+            assert!(error
+                .to_string()
+                .contains("Required builder bundle path is missing"));
+            assert_eq!(state.status, UpdateStatus::Failed);
+            assert!(!state.deferred_build);
+            server.verify().await;
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn offline_background_checks_preserve_deferred_candidate() -> Result<()> {
         let _env_guard = crate::test_util::env_lock();
         let _restore_env = crate::test_util::EnvRestoreGuard::capture(&[
             "CODEX_LINUX_SETTINGS_FILE",
@@ -2656,7 +2718,7 @@ mod tests {
             Mock::given(method("HEAD"))
                 .and(path("/Codex.dmg"))
                 .respond_with(ResponseTemplate::new(503))
-                .expect(1)
+                .expect(2)
                 .mount(&server)
                 .await;
 
@@ -2681,6 +2743,7 @@ mod tests {
             state.save(&paths.state_file)?;
 
             run_check_now(&config, &mut state, &paths, true).await?;
+            run_check_cycle_from_disk(&config, &mut state, &paths).await?;
 
             assert_eq!(state.status, UpdateStatus::UpdateDetected);
             assert!(state.deferred_build);
