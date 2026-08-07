@@ -10113,7 +10113,7 @@ var h={handlers:{"native-desktop-apps":async()=>({apps:[]})}};
 JS
 )"
     settings_body="$(cat <<'JS'
-function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};let a=useAvailability(i),{platform:o}=usePlatform(),s=hostKind(t)===`local`,c=flag(`188145323`);let f=jsx(Settings,{computerUseAvailability:a,platform:o});let h=a.available?jsx(AllowedApps,{}):null;return jsx(Page,{children:[f,h]})}function Wt(e){let t=cache(35),{computerUseAvailability:n,platform:i}=e,{selectedHostId:s}=host();let g=[];let _=usePlugins(s,g),v=useMarketplacePath(s),y=useFlag(firstFlag),b=useFlag(secondFlag),x;x=selectPlugin(_.availablePlugins,computerUsePluginName,v);return x}
+var computerUsePluginName=`computer-use`;function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};let a=useAvailability(i),{platform:o}=usePlatform(),s=hostKind(t)===`local`,c=flag(`188145323`);let f=jsx(Settings,{computerUseAvailability:a,platform:o});let h=a.available?jsx(AllowedApps,{}):null;return jsx(Page,{children:[f,h]})}function Wt(e){let t=cache(35),{computerUseAvailability:n,platform:i}=e,{selectedHostId:s}=host();let g=[];let _=usePlugins(s,g),v=useMarketplacePath(s),y=useFlag(firstFlag),b=useFlag(secondFlag),x;x=selectPlugin(_.availablePlugins,computerUsePluginName,v);return x}
 JS
 )"
     app_initial_body="$(cat <<'JS'

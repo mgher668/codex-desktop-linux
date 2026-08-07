@@ -10020,7 +10020,7 @@ test("Computer Use availability descriptor matches the current settings bundle n
 
 test("enables the current Computer Use settings contract on Linux", () => {
   const source =
-    "function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
+    "var computerUsePluginName=`computer-use`;function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
     "let a=useAvailability(i),{platform:o}=usePlatform(),s=hostKind(t)===`local`,c=flag(`188145323`);" +
     "let f=jsx(Settings,{computerUseAvailability:a,platform:o});" +
     "let h=a.available?jsx(AllowedApps,{}):null;return jsx(Page,{children:[f,h]})}" +
@@ -10039,7 +10039,7 @@ test("enables the current Computer Use settings contract on Linux", () => {
 
 test("reuses current bundled-plugin metadata for the synthetic Computer Use card", () => {
   const source =
-    "function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
+    "var computerUsePluginName=`computer-use`;function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
     "let a=useAvailability(i),{platform:o}=usePlatform(),s=hostKind(t)===`local`,c=flag(`188145323`);" +
     "let f=jsx(Settings,{computerUseAvailability:a,platform:o});" +
     "let h=a.available?jsx(AllowedApps,{}):null;return jsx(Page,{children:[f,h]})}" +
@@ -10245,7 +10245,7 @@ test("does not mistake legacy synthetic Computer Use card paths for the current 
 test("does not treat an unrelated marketplace manifest suffix as the current patch", () => {
   const source =
     "const unrelated=`/.agents/plugins/marketplace.json`;" +
-    "function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
+    "var computerUsePluginName=`computer-use`;function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
     "let a=useAvailability(i),{platform:o}=usePlatform(),s=hostKind(t)===`local`,c=flag(`188145323`);" +
     "let f=jsx(Settings,{computerUseAvailability:a,platform:o});" +
     "let h=a.available?jsx(AllowedApps,{}):null;return jsx(Page,{children:[f,h]})}" +
@@ -11178,7 +11178,7 @@ test("patchExtractedApp selects the exact 26.721 Computer Use app-initial contra
       );
       fs.writeFileSync(
         path.join(assetsDir, "computer-use-settings-BzkBOuLk.js"),
-        "function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
+        "var computerUsePluginName=`computer-use`;function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +
           "let a=useAvailability(i),{platform:o}=usePlatform(),s=hostKind(t)===`local`,c=flag(`188145323`);" +
           "let f=jsx(Settings,{computerUseAvailability:a,platform:o});let h=a.available?jsx(AllowedApps,{}):null;return jsx(Page,{children:[f,h]})}" +
           "function Wt(e){let t=cache(35),{computerUseAvailability:n,platform:i}=e,{selectedHostId:s}=host();" +
