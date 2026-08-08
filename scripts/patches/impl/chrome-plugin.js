@@ -229,7 +229,7 @@ function classifyChromeNativeHostRuntimeSource(source) {
 
 function applyLinuxChromePluginAutoInstallPatch(currentSource) {
   const gateRegex =
-    /\{([^{}]*?)(installWhenMissing:!0,)?name:([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*),([^{}]*?syncInstallStateWithChromeExtension:!0,isAvailable:\(\{buildFlavor:([A-Za-z_$][\w$]*),features:([A-Za-z_$][\w$]*)\}\)=>)((?:process\.platform===`linux`\|\|\()?\6\.externalBrowserUseAllowed&&[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\(\5\)\)?)\}/g;
+    /\{([^{}]*?)(installWhenMissing:!0,)?name:([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*),([^{}]*?syncInstallStateWithChromeExtension:(?:!0|process.platform!==`linux`),isAvailable:\(\{buildFlavor:([A-Za-z_$][\w$]*),features:([A-Za-z_$][\w$]*)\}\)=>)((?:process\.platform===`linux`\|\|\()?\6\.externalBrowserUseAllowed&&[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\(\5\)\)?)\}/g;
 
   let sawChromeGate = false;
   const patched = currentSource.replace(
@@ -248,7 +248,10 @@ function applyLinuxChromePluginAutoInstallPatch(currentSource) {
       const hasInstallWhenMissing = installWhenMissing != null ||
         prefix.includes("installWhenMissing:!0");
       const hasLinuxAvailability = expression.startsWith("process.platform===`linux`||(");
-      if (hasInstallWhenMissing && hasLinuxAvailability) {
+      const hasLinuxSyncDisabled = middleFields.includes(
+        "syncInstallStateWithChromeExtension:process.platform!==`linux`",
+      );
+      if (hasInstallWhenMissing && hasLinuxAvailability && hasLinuxSyncDisabled) {
         return gateSource;
       }
 
@@ -256,7 +259,11 @@ function applyLinuxChromePluginAutoInstallPatch(currentSource) {
       const availabilityExpression = hasLinuxAvailability
         ? expression
         : `process.platform===\`linux\`||(${expression})`;
-      return `{${prefix}${installWhenMissingField}name:${nameExpr},${middleFields}${availabilityExpression}}`;
+      const linuxSyncMiddleFields = middleFields.replace(
+        "syncInstallStateWithChromeExtension:!0",
+        "syncInstallStateWithChromeExtension:process.platform!==`linux`",
+      );
+      return `{${prefix}${installWhenMissingField}name:${nameExpr},${linuxSyncMiddleFields}${availabilityExpression}}`;
     },
   );
 

@@ -301,6 +301,7 @@
             mkdir -p "$out"
             cp -R node_modules/better-sqlite3 "$out/better-sqlite3"
             cp -R node_modules/node-pty "$out/node-pty"
+            cp -R node_modules/@parcel "$out/@parcel"
             find "$out/better-sqlite3/build" -type f ! -name "*.node" -delete 2>/dev/null || true
             find "$out/node-pty/build" -type f ! -name "*.node" -delete 2>/dev/null || true
             find "$out" -type d -empty -delete 2>/dev/null || true

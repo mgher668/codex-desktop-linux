@@ -8313,7 +8313,7 @@ test("auto-installs the current Chrome plugin gate shape", () => {
 
   assert.match(
     patched,
-    /\{forceReload:!0,installWhenMissing:!0,name:o\.c,syncInstallStateWithChromeExtension:!0,isAvailable:\(\{buildFlavor:e,features:t\}\)=>process\.platform===`linux`\|\|\(t\.externalBrowserUseAllowed&&n\.Cs\(e\)\)\}/,
+    /\{forceReload:!0,installWhenMissing:!0,name:o\.c,syncInstallStateWithChromeExtension:process\.platform!==`linux`,isAvailable:\(\{buildFlavor:e,features:t\}\)=>process\.platform===`linux`\|\|\(t\.externalBrowserUseAllowed&&n\.Cs\(e\)\)\}/,
   );
   assert.match(patched, /name:o\.s,syncInstallStateWithChromeExtension:!0,isAvailable:\(\{buildFlavor:e,env:t,features:r\}\)=>Ar\(e,t\)&&r\.externalBrowserUseAllowed/);
   assert.equal((patched.match(/installWhenMissing:!0,name:o\.c/g) || []).length, 1);
@@ -8655,14 +8655,14 @@ test("adds Linux availability to an already auto-installed Chrome plugin gate", 
 
   assert.match(
     patched,
-    /installWhenMissing:!0,name:o\.c,syncInstallStateWithChromeExtension:!0,isAvailable:\(\{buildFlavor:e,features:t\}\)=>process\.platform===`linux`\|\|\(t\.externalBrowserUseAllowed&&n\.Cs\(e\)\)/,
+    /installWhenMissing:!0,name:o\.c,syncInstallStateWithChromeExtension:process\.platform!==`linux`,isAvailable:\(\{buildFlavor:e,features:t\}\)=>process\.platform===`linux`\|\|\(t\.externalBrowserUseAllowed&&n\.Cs\(e\)\)/,
   );
 });
 
 test("keeps a fully Linux-enabled Chrome plugin gate unchanged", () => {
   const source = currentChromePluginGateBundleFixture().replace(
     "{forceReload:!0,name:o.c,syncInstallStateWithChromeExtension:!0,isAvailable:({buildFlavor:e,features:t})=>t.externalBrowserUseAllowed&&n.Cs(e)}",
-    "{forceReload:!0,installWhenMissing:!0,name:o.c,syncInstallStateWithChromeExtension:!0,isAvailable:({buildFlavor:e,features:t})=>process.platform===`linux`||(t.externalBrowserUseAllowed&&n.Cs(e))}",
+    "{forceReload:!0,installWhenMissing:!0,name:o.c,syncInstallStateWithChromeExtension:process.platform!==`linux`,isAvailable:({buildFlavor:e,features:t})=>process.platform===`linux`||(t.externalBrowserUseAllowed&&n.Cs(e))}",
   );
 
   assert.equal(applyPatchTwice(applyLinuxChromePluginAutoInstallPatch, source), source);

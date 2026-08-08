@@ -4635,6 +4635,7 @@ test_native_module_rebuild_uses_local_electron_rebuild_toolchain() {
     mkdir -p "$app_dir/node_modules/better-sqlite3" "$app_dir/node_modules/node-pty" "$fake_bin"
     printf '%s\n' '{"version":"12.9.0"}' > "$app_dir/node_modules/better-sqlite3/package.json"
     printf '%s\n' '{"version":"1.1.0"}' > "$app_dir/node_modules/node-pty/package.json"
+    printf '%s\n' '{"dependencies":{"@parcel/watcher":"2.5.6"}}' > "$app_dir/package.json"
 
     cat > "$fake_bin/npm" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -4693,6 +4694,14 @@ case "$args" in
         printf '%s\n' '{"version":"1.1.0"}' > node_modules/node-pty/package.json
         ;;
 esac
+case "$args" in
+    *" @parcel/watcher@2.5.6 "*)
+        prefix="${args#* --prefix }"
+        prefix="${prefix%% *}"
+        mkdir -p "$prefix/node_modules/@parcel/watcher" "$prefix/node_modules/@parcel/watcher-linux-x64-glibc"
+        printf '%s\n' '{"version":"2.5.6"}' > "$prefix/node_modules/@parcel/watcher/package.json"
+        ;;
+esac
 SCRIPT
     chmod +x "$fake_bin/npm"
 
@@ -4749,14 +4758,19 @@ test_native_module_rebuild_accepts_prebuilt_source() {
     mkdir -p \
         "$app_dir/node_modules/better-sqlite3" \
         "$app_dir/node_modules/node-pty" \
+        "$source_dir/@parcel/watcher" \
+        "$source_dir/@parcel/watcher-linux-x64-glibc" \
         "$source_dir/better-sqlite3/build/Release" \
         "$source_dir/node-pty/build/Release"
     printf '%s\n' '{"version":"12.9.0"}' > "$app_dir/node_modules/better-sqlite3/package.json"
     printf '%s\n' '{"version":"1.1.0"}' > "$app_dir/node_modules/node-pty/package.json"
+    printf '%s\n' '{"dependencies":{"@parcel/watcher":"2.5.6"}}' > "$app_dir/package.json"
     printf '%s\n' stale > "$app_dir/node_modules/better-sqlite3/old.txt"
 
     printf '%s\n' '{"version":"12.9.0"}' > "$source_dir/better-sqlite3/package.json"
     printf '%s\n' '{"version":"1.1.0"}' > "$source_dir/node-pty/package.json"
+    printf '%s\n' '{"version":"2.5.6"}' > "$source_dir/@parcel/watcher/package.json"
+    : > "$source_dir/@parcel/watcher-linux-x64-glibc/watcher.node"
     : > "$source_dir/better-sqlite3/build/Release/better_sqlite3.node"
     : > "$source_dir/better-sqlite3/build/Release/junk.o"
     : > "$source_dir/node-pty/build/Release/pty.node"
@@ -4778,6 +4792,8 @@ test_native_module_rebuild_accepts_prebuilt_source() {
     assert_contains "$output_log" "Using prebuilt native modules from $source_dir"
     assert_file_exists "$app_dir/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
     assert_file_exists "$app_dir/node_modules/node-pty/build/Release/pty.node"
+    assert_file_exists "$app_dir/node_modules/@parcel/watcher/package.json"
+    assert_file_exists "$app_dir/node_modules/@parcel/watcher-linux-x64-glibc/watcher.node"
     [ ! -f "$app_dir/node_modules/better-sqlite3/old.txt" ] || fail "Expected stale better-sqlite3 module to be replaced"
     [ ! -f "$app_dir/node_modules/better-sqlite3/build/Release/junk.o" ] || fail "Expected better-sqlite3 build junk to be pruned"
     [ ! -f "$app_dir/node_modules/node-pty/build/Release/junk.o" ] || fail "Expected node-pty build junk to be pruned"
