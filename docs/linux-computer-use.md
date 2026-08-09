@@ -78,10 +78,10 @@ or screenshots:
 - Hyprland: `xdg-desktop-portal-hyprland`
 - GNOME: usually available by default
 
-`doctor` reports pointer and keyboard portal capability independently. A
-header-only or pointer-only RemoteDesktop implementation remains useful when
-its supported modality is complete, but it does not make keyboard readiness
-green.
+`doctor` evaluates pointer and keyboard portal capability independently. A
+keyboard-only or pointer-only RemoteDesktop implementation remains useful when
+its supported modality is complete, but pointer-only support does not make
+keyboard readiness green.
 
 Niri window listing and exact focus use the `niri` command and the active
 session's `NIRI_SOCKET`. The Computer Use backend hydrates `NIRI_SOCKET` for GUI

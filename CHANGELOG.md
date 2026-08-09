@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   verification active while deferring local package builds until an explicit
   **Check for updates**.
 - The embedded Computer Use backend is synchronized to standalone v0.4.6 as
-  `0.4.6-linux-alpha1`, including generic X11/EWMH window control, X11
+  `0.4.6-linux-alpha2`, including generic X11/EWMH window control, X11
   `xdotool` keyboard, text, and coordinate-click input, KDE portal scroll
   polarity, and portal key chords, with generic X11 registered last.
 - A shared upstream DMG acceptance profile now produces the same structured
