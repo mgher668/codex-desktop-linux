@@ -38,8 +38,12 @@ sudo pacman -S ydotool
 sudo zypper install ydotool
 ```
 
-The preferred coordinate input path opens `/dev/uinput` directly. The XDG
-RemoteDesktop portal can also provide input on desktops that expose it.
+The preferred coordinate input path opens `/dev/uinput` directly, but that
+device provides pointer input only. Keyboard readiness still requires an XDG
+RemoteDesktop portal with keyboard support, `xdotool` on X11, or a compatible
+`ydotool` daemon and socket. Portal pointer support also requires the
+RemoteDesktop pointer methods, a monitor-capable ScreenCast source, and the
+matching advertised device types.
 
 For `ydotool`, run a daemon and make sure your user can access the socket:
 
@@ -73,6 +77,11 @@ or screenshots:
 - sway/wlroots: `xdg-desktop-portal-wlr`
 - Hyprland: `xdg-desktop-portal-hyprland`
 - GNOME: usually available by default
+
+`doctor` reports pointer and keyboard portal capability independently. A
+header-only or pointer-only RemoteDesktop implementation remains useful when
+its supported modality is complete, but it does not make keyboard readiness
+green.
 
 Niri window listing and exact focus use the `niri` command and the active
 session's `NIRI_SOCKET`. The Computer Use backend hydrates `NIRI_SOCKET` for GUI

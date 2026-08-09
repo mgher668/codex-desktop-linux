@@ -52,6 +52,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   can read the state and resume its previous automatic-build behavior. State
   written by prerelease builds using `update_available` is migrated back to
   `update_detected` on read.
+- Computer Use diagnostics now distinguish pointer-only direct uinput and
+  RemoteDesktop support from keyboard-ready input. Portal capabilities require
+  the methods and device/source types used by the runtime, so incomplete
+  portal implementations no longer produce a false-ready result.
 - Native X11 coordinate clicks now use one supervised xdotool XTEST command,
   fall back to ydotool only when xdotool cannot launch, and preserve nested X11
   session identity instead of importing a host Wayland display.
