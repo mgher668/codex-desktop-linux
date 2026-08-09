@@ -4141,6 +4141,7 @@ test_update_nix_hashes_verifies_changed_pins() {
     assert_contains "$fixture/output.log" "Nix builds succeeded after refreshing the upstream pins and Codex.dmg hash."
     assert_contains "$fixture/calls.log" "nix-store --add-fixed"
     assert_contains "$fixture/calls.log" "nix build"
+    assert_contains "$fixture/calls.log" ".#checks.x86_64-linux.parcel-watcher-staged-runtime"
     assert_contains "$fixture/calls.log" "npm install --package-lock-only --ignore-scripts"
     [ "$(node -p "require('$fixture/nix/native-modules/package.json').dependencies['@parcel/watcher']")" = "2.5.7" ] || \
         fail "Expected @parcel/watcher pin refresh to update package.json"

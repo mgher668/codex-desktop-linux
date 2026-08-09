@@ -404,6 +404,23 @@ test("Nix hash refresh accepts a validated focused output override", () => {
   assert.match(script, /run_nix_build "\$VERIFY_LOG" "\$\{PACKAGE_OUTPUTS\[@\]\}"/);
 });
 
+test("Parcel watcher runtime check is built by PR and current-DMG Nix verification", () => {
+  const selector = ".#checks.x86_64-linux.parcel-watcher-staged-runtime";
+  const sources = [
+    path.resolve(__dirname, "update-nix-hashes.sh"),
+    path.resolve(__dirname, "../../.github/workflows/ci.yml"),
+    path.resolve(__dirname, "../../.github/workflows/update-codex-hash.yml"),
+  ];
+
+  for (const sourcePath of sources) {
+    const source = fs.readFileSync(sourcePath, "utf8");
+    assert.ok(
+      source.includes(selector),
+      `${path.relative(path.resolve(__dirname, "../.."), sourcePath)} must build ${selector}`,
+    );
+  }
+});
+
 test("local Node syntax checks parse native .js ESM in module mode", () => {
   const script = fs.readFileSync(
     path.resolve(__dirname, "run-node-checks.sh"),
