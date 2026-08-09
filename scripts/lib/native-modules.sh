@@ -175,27 +175,50 @@ stage_parcel_watcher_for_linux() {
     local app_package_json="$app_extracted/package.json"
     local prebuilt_modules_source="${2:-}"
     local parcel_watcher_version
+    local prebuilt_watcher_version
     local watcher_build_dir="$WORK_DIR/parcel-watcher-build"
     local staged_dependency
+    local staged_dependency_name
 
     [ -f "$app_package_json" ] || error "Could not find extracted app package.json for @parcel/watcher"
     parcel_watcher_version="$(node -e '
-const app = require(process.argv[1]);
-const version = app.dependencies?.["@parcel/watcher"] ?? app.optionalDependencies?.["@parcel/watcher"];
+const path = require("path");
+const appRoot = process.argv[1];
+const app = require(path.join(appRoot, "package.json"));
+let version;
+try {
+  version = require(path.join(appRoot, "node_modules/@parcel/watcher/package.json")).version;
+} catch {
+  version = app.dependencies?.["@parcel/watcher"] ?? app.optionalDependencies?.["@parcel/watcher"];
+}
 if (typeof version !== "string" || version.length === 0) process.exit(1);
 process.stdout.write(version);
-' "$app_package_json" 2>/dev/null || true)"
+' "$app_extracted" 2>/dev/null || true)"
     [ -n "$parcel_watcher_version" ] || error "Could not detect @parcel/watcher version from extracted app"
 
     if [ -n "$prebuilt_modules_source" ]; then
         [ -f "$prebuilt_modules_source/@parcel/watcher/package.json" ] || \
             error "Prebuilt @parcel/watcher source not found at $prebuilt_modules_source/@parcel/watcher"
-        mkdir -p "$app_extracted/node_modules/@parcel"
-        cp -a "$prebuilt_modules_source/@parcel/." "$app_extracted/node_modules/@parcel/"
-        if [ -d "$prebuilt_modules_source/node-gyp-build" ]; then
-            rm -rf "$app_extracted/node_modules/node-gyp-build"
-            cp -a "$prebuilt_modules_source/node-gyp-build" "$app_extracted/node_modules/"
-        fi
+        prebuilt_watcher_version="$(node -p \
+            "require('$prebuilt_modules_source/@parcel/watcher/package.json').version" \
+            2>/dev/null || true)"
+        [ "$prebuilt_watcher_version" = "$parcel_watcher_version" ] || \
+            error "Prebuilt @parcel/watcher version mismatch: expected $parcel_watcher_version, got ${prebuilt_watcher_version:-unknown}"
+
+        # The Nix output is a minimal node_modules-shaped tree containing the
+        # watcher and its complete runtime dependency closure. Copy every entry
+        # except the two native modules already installed and pruned above.
+        for staged_dependency in "$prebuilt_modules_source"/*; do
+            [ -e "$staged_dependency" ] || continue
+            staged_dependency_name="$(basename "$staged_dependency")"
+            case "$staged_dependency_name" in
+                better-sqlite3|node-pty)
+                    continue
+                    ;;
+            esac
+            rm -rf "$app_extracted/node_modules/$staged_dependency_name"
+            cp -a "$staged_dependency" "$app_extracted/node_modules/"
+        done
     else
         rm -rf "$watcher_build_dir"
         mkdir -p "$watcher_build_dir"
