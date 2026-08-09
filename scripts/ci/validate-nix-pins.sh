@@ -216,7 +216,10 @@ dmg_electron_version="$(detect_dmg_electron_version "$APP_DIR" "$ASAR_EXTRACT_DI
 dmg_codex_version="$(json_file_field "$ASAR_EXTRACT_DIR/package.json" "value.version")"
 dmg_better_sqlite3_version="$(json_file_field "$ASAR_EXTRACT_DIR/node_modules/better-sqlite3/package.json" "value.version")"
 dmg_node_pty_version="$(json_file_field "$ASAR_EXTRACT_DIR/node_modules/node-pty/package.json" "value.version")"
-dmg_parcel_watcher_version="$(json_file_field "$ASAR_EXTRACT_DIR/node_modules/@parcel/watcher/package.json" "value.version")"
+dmg_parcel_watcher_version="$(json_file_field "$ASAR_EXTRACT_DIR/package.json" \
+    "(value.dependencies?.['@parcel/watcher'] || value.optionalDependencies?.['@parcel/watcher'])")"
+dmg_parcel_watcher_version="$(sanitize_electron_version "$dmg_parcel_watcher_version")" || \
+    fail "Could not find @parcel/watcher version in DMG app package.json"
 
 nix_codex_version="$(read_nix_string codexVersion)"
 nix_electron_version="$(read_nix_string electronVersion)"

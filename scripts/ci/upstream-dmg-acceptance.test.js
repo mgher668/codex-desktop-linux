@@ -319,6 +319,22 @@ test("all CI upstream DMG consumers use the non-empty atomic downloader", () => 
   }
 });
 
+test("Nix pin validation reads the unbundled Parcel watcher version from the app manifest", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "validate-nix-pins.sh"),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /ASAR_EXTRACT_DIR\/package\.json[\s\S]*dependencies\?\.\['@parcel\/watcher'\]/,
+  );
+  assert.doesNotMatch(
+    source,
+    /ASAR_EXTRACT_DIR\/node_modules\/@parcel\/watcher\/package\.json/,
+  );
+});
+
 test("Nix refresh serializes campaigns and deduplicates refresh and exact-head CI", () => {
   const workflow = fs.readFileSync(
     path.resolve(__dirname, "../../.github/workflows/update-codex-hash.yml"),
