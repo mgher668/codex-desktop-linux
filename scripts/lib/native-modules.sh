@@ -185,12 +185,7 @@ stage_parcel_watcher_for_linux() {
 const path = require("path");
 const appRoot = process.argv[1];
 const app = require(path.join(appRoot, "package.json"));
-let version;
-try {
-  version = require(path.join(appRoot, "node_modules/@parcel/watcher/package.json")).version;
-} catch {
-  version = app.dependencies?.["@parcel/watcher"] ?? app.optionalDependencies?.["@parcel/watcher"];
-}
+const version = app.dependencies?.["@parcel/watcher"] ?? app.optionalDependencies?.["@parcel/watcher"];
 if (typeof version !== "string" || version.length === 0) process.exit(1);
 process.stdout.write(version);
 ' "$app_extracted" 2>/dev/null || true)"

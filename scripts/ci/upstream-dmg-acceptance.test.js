@@ -335,6 +335,22 @@ test("Nix pin validation reads the unbundled Parcel watcher version from the app
   );
 });
 
+test("installer reads the unbundled Parcel watcher version from the current app manifest", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "../lib/native-modules.sh"),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /app\.dependencies\?\.\["@parcel\/watcher"\][\s\S]*app\.optionalDependencies\?\.\["@parcel\/watcher"\]/,
+  );
+  assert.doesNotMatch(
+    source,
+    /require\(path\.join\(appRoot, "node_modules\/@parcel\/watcher\/package\.json"\)\)/,
+  );
+});
+
 test("Nix refresh serializes campaigns and deduplicates refresh and exact-head CI", () => {
   const workflow = fs.readFileSync(
     path.resolve(__dirname, "../../.github/workflows/update-codex-hash.yml"),
