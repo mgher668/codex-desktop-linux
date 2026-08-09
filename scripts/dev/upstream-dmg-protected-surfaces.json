@@ -519,7 +519,7 @@
     },
     {
       "id": "browser_use_policy_shims",
-      "title": "Browser Use policy shims and site-status allowlist",
+      "title": "Browser Use policy shims and upstream site-status fail-open",
       "category": "webview",
       "pathPatterns": [
         "browser-client\\.mjs",
@@ -545,13 +545,15 @@
           ],
           "contentNeedles": [
             "config.toml",
-            "/aura/site_status"
+            "/aura/site_status",
+            "error_fail_open",
+            "site_status_unavailable"
           ]
         }
       ],
       "linuxSubstrate": {
         "requiredPaths": [
-          "scripts/lib/patch-chrome-plugin.js"
+          "scripts/lib/bundled-plugins.sh"
         ]
       }
     },

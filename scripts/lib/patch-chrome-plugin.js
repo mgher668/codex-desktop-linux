@@ -206,9 +206,7 @@ function chromeArgumentValue(argv, name) {
 // upstream covers it, and creating a tab before the browser is chosen still
 // launches the wrong profile.
 const controlChromeSkill = path.join(pluginDir, "skills", "control-chrome", "SKILL.md");
-// Only the chrome plugin ships this skill; the browser plugin never has it, so
-// its absence is a layout fact rather than drift.
-if (fs.existsSync(path.dirname(controlChromeSkill))) patchFile(controlChromeSkill, [
+patchFile(controlChromeSkill, [
   {
     label: "Chrome profile launch guard",
     oldText: `Do not inspect browser cookies, local storage, profiles, passwords, or session stores. Browser discovery must remain read-only.`,

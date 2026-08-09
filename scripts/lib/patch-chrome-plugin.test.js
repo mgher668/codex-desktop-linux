@@ -10,33 +10,67 @@ const test = require("node:test");
 
 const patcher = path.join(__dirname, "patch-chrome-plugin.js");
 
-test("keeps current browser preference routing unchanged", () => {
+test("patches current Chrome skill and profile resolvers idempotently", () => {
   const pluginDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-chrome-plugin-current-"));
   const scriptsDir = path.join(pluginDir, "scripts");
-  const browserClient = [
-    "const browserPreference = {};",
-    "function preferredWindowIdFor() {}",
-    "function getForUrl() {}",
-    "const extensionInstanceId = null;",
-  ].join("\n");
+  const skillDir = path.join(pluginDir, "skills", "control-chrome");
+  const profileScript = `function resolveChromeProfileDirectory(userDataDirectory) {
+  const localStateProfile =
+    resolveChromeProfileDirectoryFromLocalState(userDataDirectory);
+  if (localStateProfile) return localStateProfile;
+
+  return findLatestChromeProfile(userDataDirectory);
+}
+
+function resolveChromeProfileDirectoryFromLocalState(userDataDirectory) {
+  return null;
+}
+`;
 
   try {
     fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(
-      path.join(scriptsDir, "browser-client.mjs"),
-      browserClient,
+      path.join(skillDir, "SKILL.md"),
+      "Do not inspect browser cookies, local storage, profiles, passwords, or session stores. Browser discovery must remain read-only.\n",
       "utf8",
     );
-    const result = spawnSync(process.execPath, [patcher, pluginDir], {
+    for (const scriptName of ["check-extension-installed.js", "open-chrome-window.js"]) {
+      fs.writeFileSync(path.join(scriptsDir, scriptName), profileScript, "utf8");
+    }
+
+    const firstResult = spawnSync(process.execPath, [patcher, pluginDir], {
       encoding: "utf8",
     });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(
-      fs.readFileSync(path.join(scriptsDir, "browser-client.mjs"), "utf8"),
-      browserClient,
-    );
-    assert.doesNotMatch(result.stdout, /browser-client\.mjs skipped:/);
-    assert.doesNotMatch(result.stderr, /browser-client\.mjs missing patch target/);
+    assert.equal(firstResult.status, 0, firstResult.stderr);
+    assert.equal(firstResult.stderr, "");
+
+    const firstSources = new Map();
+    const skillPath = path.join(skillDir, "SKILL.md");
+    const patchedSkill = fs.readFileSync(skillPath, "utf8");
+    assert.match(patchedSkill, /browser\.tabs\.new\(\)/);
+    assert.match(patchedSkill, /start a different Chrome, Brave, or Chromium profile/);
+    firstSources.set(skillPath, patchedSkill);
+
+    for (const scriptName of ["check-extension-installed.js", "open-chrome-window.js"]) {
+      const scriptPath = path.join(scriptsDir, scriptName);
+      const source = fs.readFileSync(scriptPath, "utf8");
+      assert.match(source, /resolveChromeProfileDirectoryFromRunningProcess/);
+      assert.equal(source.match(/function linuxProcessDirectories/g)?.length, 1);
+      firstSources.set(scriptPath, source);
+    }
+
+    const secondResult = spawnSync(process.execPath, [patcher, pluginDir], {
+      encoding: "utf8",
+    });
+    assert.equal(secondResult.status, 0, secondResult.stderr);
+    assert.equal(secondResult.stderr, "");
+    assert.match(secondResult.stdout, /SKILL\.md already patched: Chrome profile launch guard/);
+    assert.match(secondResult.stdout, /check-extension-installed\.js already patched:/);
+    assert.match(secondResult.stdout, /open-chrome-window\.js already patched:/);
+    for (const [filePath, firstSource] of firstSources) {
+      assert.equal(fs.readFileSync(filePath, "utf8"), firstSource);
+    }
   } finally {
     fs.rmSync(pluginDir, { recursive: true, force: true });
   }

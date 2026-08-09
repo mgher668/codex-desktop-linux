@@ -163,7 +163,7 @@ JSON
 {"name":"browser","version":"0.1.0-alpha2","interface":{"category":"Engineering"}}
 JSON
     cat > "$resources_dir/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs" <<'JS'
-import{env as Ub}from"node:process";function lu(e){let t=globalThis.nodeRepl?.env[e];return typeof t=="string"?t:void 0}function Me(){let e=globalThis.nodeRepl;return e?.config==null?void 0:e}async function cM(e){let t=e.createElicitation.bind(e),r={...e,platform:`linux`,setResponseMeta:e.setResponseMeta,get requestMeta(){return e.requestMeta},async createElicitation(o){return await t(o)}},n=await $K(e,r);return n!=null&&(r.gaas=n),r}async function $K(){return null}function th(){let e=import.meta.__codexNativePipe;return e==null||typeof e.createConnection!="function"?null:e}var I2=new Set(["about:blank"]);function Gb(e){if(I2.has(e))return!0;let t;try{t=new URL(e)}catch{return!1}return t.protocol==="http:"||t.protocol==="https:"}class Uf{async fetchBlocked(e,t){let r=await bS(e.endpoint,{method:"GET"});if(!r.ok)throw new Error(ae(`${t} cannot determine if ${e.displayUrl} is allowed. Please try again later or use another source.`));let n=await r.json();return TF(n)}}var kE=t=>t==="win32"?"\\\\.\\pipe\\codex-browser-use":"/tmp/codex-browser-use";var Q6=e=>e.platform==="win32"?t4(e):e4(e),e4=async e=>{let t=kE(e.platform);return(await yP(t)).map(n=>wP.resolve(t,n))},t4=async e=>[];export function setupAtlasRuntime() {return Ub.XDG_CONFIG_HOME}
+import{env as Ub}from"node:process";function lu(e){let t=globalThis.nodeRepl?.env[e];return typeof t=="string"?t:void 0}function Me(){let e=globalThis.nodeRepl;return e?.config==null?void 0:e}async function cM(e){let t=e.createElicitation.bind(e),r={...e,platform:`linux`,setResponseMeta:e.setResponseMeta,get requestMeta(){return e.requestMeta},async createElicitation(o){return await t(o)}},n=await $K(e,r);return n!=null&&(r.gaas=n),r}async function $K(){return null}function th(){let e=import.meta.__codexNativePipe;return e==null||typeof e.createConnection!="function"?null:e}var I2=new Set(["about:blank"]);function Gb(e){if(I2.has(e))return!0;let t;try{t=new URL(e)}catch{return!1}return t.protocol==="http:"||t.protocol==="https:"}var siteStatusEvents=[];class SiteStatusHttpError extends Error{constructor(e){super("Browser Use site-status request failed.");this.httpStatus=e}}class SiteStatusPolicy{async throwIfBlocksUrl(e,t,r){let n;try{n=await this.isBlocked(e,t,r)}catch(o){recordSiteStatusError(o,r);return}if(n.blocked)throw new Error("site_status_blocked")}async isBlocked(e,t){return{blocked:await this.fetchBlocked(e,t),outcome:"success"}}async fetchBlocked(e,t){let r=await e.fetch(t.endpoint,{method:"GET"});if(!r.ok)throw new SiteStatusHttpError(r.status);let n=await r.json();return n.blocked===!0}}function recordSiteStatusError(e,t){siteStatusEvents.push({backend:t,httpStatus:e instanceof SiteStatusHttpError?e.httpStatus:void 0,outcome:"error_fail_open",reason:"site_status_unavailable"})}var kE=t=>t==="win32"?"\\\\.\\pipe\\codex-browser-use":"/tmp/codex-browser-use";var Q6=e=>e.platform==="win32"?t4(e):e4(e),e4=async e=>{let t=kE(e.platform);return(await yP(t)).map(n=>wP.resolve(t,n))},t4=async e=>[];export function setupAtlasRuntime() {return Ub.XDG_CONFIG_HOME}
 JS
 }
 
@@ -7836,12 +7836,82 @@ test_browser_plugin_renamed_upstream_staging() {
     assert_contains "$browser_dir/scripts/browser-client.mjs" "codexLinuxBrowserUseUserInfo"
     assert_not_contains "$browser_dir/scripts/browser-client.mjs" "process.env.CODEX_BROWSER_USE_SOCKET_DIR"
     assert_not_contains "$browser_dir/scripts/browser-client.mjs" '"/tmp/codex-browser-use"'
+    assert_contains "$browser_dir/scripts/browser-client.mjs" 'outcome:"error_fail_open"'
+    assert_contains "$browser_dir/scripts/browser-client.mjs" 'reason:"site_status_unavailable"'
+    assert_not_contains "$browser_dir/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
     assert_contains "$browser_dir/scripts/browser-client.mjs" 'protocol==="file:"'
     assert_not_contains "$browser_dir/scripts/browser-client.mjs" 'protocol==="data:"'
     assert_contains "$marketplace" '"name": "browser"'
     assert_contains "$marketplace" '"path": "./plugins/browser"'
     assert_contains "$output_log" "Browser plugin staged from upstream DMG"
     assert_not_contains "$output_log" "Browser bundled plugin resources not present"
+
+    node - "$browser_dir/scripts/browser-client.mjs" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+
+const source = fs
+  .readFileSync(process.argv[2], "utf8")
+  .replace(
+    'import{userInfo as codexLinuxBrowserUseUserInfo}from"node:os";',
+    "var codexLinuxBrowserUseUserInfo=()=>({uid:1000});",
+  )
+  .replaceAll("import.meta.__codexNativePipe", "globalThis.__codexNativePipe")
+  .replace("export function setupAtlasRuntime", "function setupAtlasRuntime");
+const context = { URL };
+vm.createContext(context);
+vm.runInContext(
+  `${source}\nglobalThis.__SiteStatusPolicy=SiteStatusPolicy;globalThis.__siteStatusEvents=siteStatusEvents;`,
+  context,
+);
+
+const policy = new context.__SiteStatusPolicy();
+const request = { endpoint: "http://127.0.0.1/aura/site_status" };
+
+(async () => {
+  for (const failure of [
+    new Error("network unavailable"),
+    { ok: false, status: 503, json: async () => ({ blocked: false }) },
+    { ok: true, status: 200, json: async () => { throw new Error("invalid JSON"); } },
+  ]) {
+    const before = context.__siteStatusEvents.length;
+    const runtime = {
+      async fetch() {
+        if (failure instanceof Error) throw failure;
+        return failure;
+      },
+    };
+    await policy.throwIfBlocksUrl(runtime, request, "cdp");
+    assert.equal(context.__siteStatusEvents.length, before + 1);
+    assert.equal(context.__siteStatusEvents.at(-1).outcome, "error_fail_open");
+    assert.equal(context.__siteStatusEvents.at(-1).reason, "site_status_unavailable");
+  }
+
+  const allowedRuntime = {
+    async fetch() {
+      return { ok: true, status: 200, json: async () => ({ blocked: false }) };
+    },
+  };
+  const beforeAllowed = context.__siteStatusEvents.length;
+  await policy.throwIfBlocksUrl(allowedRuntime, request, "cdp");
+  assert.equal(context.__siteStatusEvents.length, beforeAllowed);
+
+  const blockedRuntime = {
+    async fetch() {
+      return { ok: true, status: 200, json: async () => ({ blocked: true }) };
+    },
+  };
+  await assert.rejects(
+    policy.throwIfBlocksUrl(blockedRuntime, request, "cdp"),
+    /site_status_blocked/,
+  );
+  assert.equal(context.__siteStatusEvents.length, beforeAllowed);
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+NODE
 }
 
 test_upstream_bundled_skills_staging() {
@@ -8685,6 +8755,9 @@ test_chrome_plugin_staging() {
     assert_mode "$chrome_dir/scripts/check-extension-installed.js" "755"
     assert_mode "$chrome_dir/scripts/open-chrome-window.js" "755"
     assert_contains "$chrome_dir/scripts/installManifest.mjs" "nativeMessagingManifestDirectories"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/chromium/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" "Object.values(browserRegistry).flatMap"
     assert_contains "$chrome_dir/scripts/check-native-host-manifest.js" 'process.platform === "linux"'
     assert_contains "$chrome_dir/scripts/check-native-host-manifest.js" "resolveLinuxNativeMessagingManifestPath"
     assert_contains "$chrome_dir/scripts/installed-browsers.js" "config.browserDiagnostics"
