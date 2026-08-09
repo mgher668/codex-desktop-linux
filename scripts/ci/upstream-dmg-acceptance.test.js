@@ -404,10 +404,9 @@ test("Nix hash refresh accepts a validated focused output override", () => {
   assert.match(script, /run_nix_build "\$VERIFY_LOG" "\$\{PACKAGE_OUTPUTS\[@\]\}"/);
 });
 
-test("Parcel watcher runtime check is built by PR and current-DMG Nix verification", () => {
+test("Parcel watcher runtime check is built by PR and scheduled current-DMG Nix verification", () => {
   const selector = ".#checks.x86_64-linux.parcel-watcher-staged-runtime";
   const sources = [
-    path.resolve(__dirname, "update-nix-hashes.sh"),
     path.resolve(__dirname, "../../.github/workflows/ci.yml"),
     path.resolve(__dirname, "../../.github/workflows/update-codex-hash.yml"),
   ];

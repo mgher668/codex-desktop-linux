@@ -15,7 +15,6 @@ PACKAGE_OUTPUTS=(
     ".#codex-desktop-computer-use-ui"
     ".#codex-desktop-remote-mobile-control"
     ".#codex-desktop-computer-use-ui-remote-mobile-control"
-    ".#checks.x86_64-linux.parcel-watcher-staged-runtime"
     ".#installer"
 )
 
