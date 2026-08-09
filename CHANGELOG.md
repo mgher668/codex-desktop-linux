@@ -54,8 +54,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `update_detected` on read.
 - Computer Use diagnostics now distinguish pointer-only direct uinput and
   RemoteDesktop support from keyboard-ready input. Portal capabilities require
-  the methods, device/source types, and hidden cursor mode used by the runtime,
-  so incomplete portal implementations no longer produce a false-ready result.
+  the methods and device/source types used by the runtime, plus the hidden
+  cursor mode on ScreenCast v2 and newer, so incomplete portal implementations
+  no longer produce a false-ready result without rejecting compatible v1 portals.
 - Native X11 coordinate clicks now use one supervised xdotool XTEST command,
   fall back to ydotool only when xdotool cannot launch, and preserve nested X11
   session identity instead of importing a host Wayland display.

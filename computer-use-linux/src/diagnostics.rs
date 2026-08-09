@@ -52,6 +52,7 @@ const PORTAL_DEVICE_KEYBOARD: u32 = 1;
 const PORTAL_DEVICE_POINTER: u32 = 2;
 const PORTAL_CURSOR_MODE_HIDDEN: u32 = 1;
 const PORTAL_SOURCE_MONITOR: u32 = 1;
+const SCREENCAST_CURSOR_MODE_VERSION: u32 = 2;
 const REMOTE_DESKTOP_KEYBOARD_METHODS: &[&str] = &[
     "CreateSession",
     "SelectDevices",
@@ -1121,6 +1122,17 @@ fn remote_desktop_portal_checks() -> (Check, Check, Check) {
             "AvailableSourceTypes",
         ],
     );
+    let screencast_version = command_check_with_session_bus(
+        "busctl",
+        &[
+            "--user",
+            "get-property",
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.ScreenCast",
+            "version",
+        ],
+    );
     let available_cursor_modes = command_check_with_session_bus(
         "busctl",
         &[
@@ -1137,6 +1149,7 @@ fn remote_desktop_portal_checks() -> (Check, Check, Check) {
         &screencast,
         &available_device_types,
         &available_source_types,
+        &screencast_version,
         &available_cursor_modes,
     );
     let keyboard = remote_desktop_keyboard_check_from(&introspection, &available_device_types);
@@ -1148,6 +1161,7 @@ fn remote_desktop_pointer_check_from(
     screencast: &Check,
     available_device_types: &Check,
     available_source_types: &Check,
+    screencast_version: &Check,
     available_cursor_modes: &Check,
 ) -> Check {
     if !introspection.ok {
@@ -1195,18 +1209,28 @@ fn remote_desktop_pointer_check_from(
         ));
     }
 
-    let cursor_modes = match screencast_cursor_modes(available_cursor_modes) {
-        Ok(cursor_modes) => cursor_modes,
+    let version = match screencast_version_number(screencast_version) {
+        Ok(version) => version,
         Err(detail) => return Check::fail(detail),
     };
-    if cursor_modes & PORTAL_CURSOR_MODE_HIDDEN == 0 {
-        return Check::fail(format!(
-            "ScreenCast AvailableCursorModes={cursor_modes} does not include hidden cursor mode"
+    if version >= SCREENCAST_CURSOR_MODE_VERSION {
+        let cursor_modes = match screencast_cursor_modes(available_cursor_modes) {
+            Ok(cursor_modes) => cursor_modes,
+            Err(detail) => return Check::fail(detail),
+        };
+        if cursor_modes & PORTAL_CURSOR_MODE_HIDDEN == 0 {
+            return Check::fail(format!(
+                "ScreenCast AvailableCursorModes={cursor_modes} does not include hidden cursor mode"
+            ));
+        }
+
+        return Check::ok(format!(
+            "pointer-capable RemoteDesktop portal (AvailableDeviceTypes={device_types}, AvailableSourceTypes={source_types}, ScreenCast version={version}, AvailableCursorModes={cursor_modes})"
         ));
     }
 
     Check::ok(format!(
-        "pointer-capable RemoteDesktop portal (AvailableDeviceTypes={device_types}, AvailableSourceTypes={source_types}, AvailableCursorModes={cursor_modes})"
+        "pointer-capable RemoteDesktop portal (AvailableDeviceTypes={device_types}, AvailableSourceTypes={source_types}, ScreenCast version={version}, hidden cursor mode is the interface default)"
     ))
 }
 
@@ -1290,6 +1314,21 @@ fn screencast_cursor_modes(available_cursor_modes: &Check) -> Result<u32, String
         format!(
             "ScreenCast AvailableCursorModes has an unexpected value: {}",
             available_cursor_modes.detail
+        )
+    })
+}
+
+fn screencast_version_number(screencast_version: &Check) -> Result<u32, String> {
+    if !screencast_version.ok {
+        return Err(format!(
+            "ScreenCast version is unavailable: {}",
+            screencast_version.detail
+        ));
+    }
+    parse_busctl_u32_property(&screencast_version.detail).ok_or_else(|| {
+        format!(
+            "ScreenCast version has an unexpected value: {}",
+            screencast_version.detail
         )
     })
 }
@@ -1787,6 +1826,7 @@ mod tests {
             &screencast_runtime_introspection(),
             &available_device_types,
             &Check::ok("u 1"),
+            &Check::ok("u 2"),
             &Check::ok("u 1"),
         );
         let keyboard = remote_desktop_keyboard_check_from(&introspection, &available_device_types);
@@ -1858,6 +1898,7 @@ mod tests {
             &Check::ok("NAME TYPE SIGNATURE RESULT/VALUE FLAGS"),
             &Check::ok("u 2"),
             &Check::ok("u 1"),
+            &Check::ok("u 2"),
             &Check::ok("u 1"),
         );
 
@@ -1870,6 +1911,7 @@ mod tests {
         let check = remote_desktop_pointer_check_from(
             &remote_desktop_runtime_introspection(),
             &screencast_runtime_introspection(),
+            &Check::ok("u 2"),
             &Check::ok("u 2"),
             &Check::ok("u 2"),
             &Check::ok("u 1"),
@@ -1898,10 +1940,28 @@ mod tests {
             &Check::ok("u 2"),
             &Check::ok("u 1"),
             &Check::ok("u 2"),
+            &Check::ok("u 2"),
         );
 
         assert!(!check.ok);
         assert!(check.detail.contains("does not include hidden cursor mode"));
+    }
+
+    #[test]
+    fn remote_desktop_pointer_accepts_screencast_v1_default_hidden_cursor() {
+        let check = remote_desktop_pointer_check_from(
+            &remote_desktop_runtime_introspection(),
+            &screencast_runtime_introspection(),
+            &Check::ok("u 2"),
+            &Check::ok("u 1"),
+            &Check::ok("u 1"),
+            &Check::fail("AvailableCursorModes is not available on ScreenCast v1"),
+        );
+
+        assert!(check.ok);
+        assert!(check
+            .detail
+            .contains("hidden cursor mode is the interface default"));
     }
 
     #[test]
@@ -1924,6 +1984,7 @@ mod tests {
             &screencast_runtime_introspection(),
             &available_device_types,
             &Check::ok("u 1"),
+            &Check::ok("u 2"),
             &Check::ok("u 1"),
         );
         let keyboard = remote_desktop_keyboard_check_from(

@@ -43,7 +43,8 @@ device provides pointer input only. Keyboard readiness still requires an XDG
 RemoteDesktop portal with keyboard support, `xdotool` on X11, or a compatible
 `ydotool` daemon and socket. Portal pointer support also requires the
 RemoteDesktop pointer methods, a monitor-capable ScreenCast source, and the
-matching advertised device types and hidden cursor mode.
+matching advertised device types. ScreenCast v2 and newer must also advertise
+the hidden cursor mode that the runtime requests; v1 uses that mode by default.
 
 For `ydotool`, run a daemon and make sure your user can access the socket:
 
