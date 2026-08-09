@@ -7,6 +7,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 
 const patcher = path.join(__dirname, "patch-chrome-plugin.js");
 
@@ -24,6 +25,14 @@ test("patches current Chrome skill and profile resolvers idempotently", () => {
 
 function resolveChromeProfileDirectoryFromLocalState(userDataDirectory) {
   return null;
+}
+
+function findLatestChromeProfile(userDataDirectory) {
+  return "Default";
+}
+
+function isUsableChromeProfile(userDataDirectory, profileDirectory) {
+  return profileDirectory.length > 0;
 }
 `;
 
@@ -44,6 +53,23 @@ function resolveChromeProfileDirectoryFromLocalState(userDataDirectory) {
     });
     assert.equal(firstResult.status, 0, firstResult.stderr);
     assert.equal(firstResult.stderr, "");
+    assert.match(firstResult.stdout, /Patched SKILL\.md: Chrome profile launch guard/);
+    assert.match(
+      firstResult.stdout,
+      /Patched check-extension-installed\.js: Linux running browser extension profile preference/,
+    );
+    assert.match(
+      firstResult.stdout,
+      /Patched check-extension-installed\.js: Linux running browser extension profile resolver/,
+    );
+    assert.match(
+      firstResult.stdout,
+      /Patched open-chrome-window\.js: Linux running browser profile preference/,
+    );
+    assert.match(
+      firstResult.stdout,
+      /Patched open-chrome-window\.js: Linux running browser profile resolver/,
+    );
 
     const firstSources = new Map();
     const skillPath = path.join(skillDir, "SKILL.md");
@@ -55,8 +81,33 @@ function resolveChromeProfileDirectoryFromLocalState(userDataDirectory) {
     for (const scriptName of ["check-extension-installed.js", "open-chrome-window.js"]) {
       const scriptPath = path.join(scriptsDir, scriptName);
       const source = fs.readFileSync(scriptPath, "utf8");
-      assert.match(source, /resolveChromeProfileDirectoryFromRunningProcess/);
+      assert.match(
+        source,
+        /const runningProfile =\s+resolveChromeProfileDirectoryFromRunningProcess\(userDataDirectory\);\s+if \(runningProfile\) return runningProfile;/,
+      );
       assert.equal(source.match(/function linuxProcessDirectories/g)?.length, 1);
+
+      const context = {
+        fs: {
+          readdirSync(directory) {
+            assert.equal(directory, "/proc");
+            return ["4242"];
+          },
+          readFileSync(filePath) {
+            assert.equal(filePath, "/proc/4242/cmdline");
+            return "google-chrome\0--user-data-dir=/profiles\0--profile-directory=Work\0";
+          },
+        },
+        os: { homedir: () => "/home/test" },
+        path,
+        process: { platform: "linux" },
+        result: null,
+      };
+      vm.runInNewContext(
+        `${source}\nresult = resolveChromeProfileDirectory("/profiles");`,
+        context,
+      );
+      assert.equal(context.result, "Work", `${scriptName} must prefer the running profile`);
       firstSources.set(scriptPath, source);
     }
 

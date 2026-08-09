@@ -8542,7 +8542,7 @@ JSON
 {"name":"chrome","version":"0.1.7"}
 JSON
     cat > "$chrome_dir/scripts/installManifest.mjs" <<'JS'
-var browserRegistry={chrome:{linux:{nativeMessagingManifestDirectories:[".config/google-chrome/NativeMessagingHosts",".config/chromium/NativeMessagingHosts"]}},brave:{linux:{nativeMessagingManifestDirectories:[".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"]}}};var manifestDirectories=Object.values(browserRegistry).flatMap(browser=>browser.linux.nativeMessagingManifestDirectories);
+var w={chrome:{linux:{nativeMessagingManifestDirectories:[".config/google-chrome/NativeMessagingHosts",".config/chromium/NativeMessagingHosts",".config/google-chrome-beta/NativeMessagingHosts",".config/google-chrome-unstable/NativeMessagingHosts",".config/google-chrome-for-testing/NativeMessagingHosts"]}},edge:{linux:{nativeMessagingManifestDirectories:[".config/microsoft-edge/NativeMessagingHosts"]}},brave:{linux:{nativeMessagingManifestDirectories:[".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"]}},opera:{linux:{nativeMessagingManifestDirectories:[".config/opera/NativeMessagingHosts"]}},vivaldi:{linux:{nativeMessagingManifestDirectories:[".config/vivaldi/NativeMessagingHosts"]}}};var manifestDirectories=Object.values(w).flatMap(t=>t.linux.nativeMessagingManifestDirectories);
 JS
     cat > "$chrome_dir/skills/control-chrome/SKILL.md" <<'MD'
 # Chrome
@@ -8551,7 +8551,7 @@ JS
 Do not inspect browser cookies, local storage, profiles, passwords, or session stores. Browser discovery must remain read-only.
 MD
     cat > "$chrome_dir/scripts/extension-ids.json" <<'JSON'
-{"extensionIds":["hehggadaopoacecdllhhajmbjkdcmajg"],"extensionHostName":"com.openai.codexextension","browserDiagnostics":[{"browserFamily":"chrome","displayName":"Google Chrome","linux":{"commands":["google-chrome","google-chrome-stable","chromium","chromium-browser"],"nativeMessagingManifestDirectories":[".config/google-chrome/NativeMessagingHosts",".config/chromium/NativeMessagingHosts"],"processNames":["chrome"],"userDataDirectorySegments":[".config","google-chrome"]}},{"browserFamily":"brave","displayName":"Brave","linux":{"commands":["brave-browser","brave"],"nativeMessagingManifestDirectories":[".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"],"processNames":["brave","brave-browser"],"userDataDirectorySegments":[".config","BraveSoftware","Brave-Browser"]}}]}
+{"extensionIds":["hehggadaopoacecdllhhajmbjkdcmajg","odlomjlbamekndcpllcnffbgeohgkmjh"],"extensionHostName":"com.openai.codexextension","browserDiagnostics":[{"browserFamily":"chrome","displayName":"Google Chrome","linux":{"commands":["google-chrome","google-chrome-stable","chromium","chromium-browser","google-chrome-beta","google-chrome-unstable","google-chrome-for-testing"],"nativeMessagingManifestDirectories":[".config/google-chrome/NativeMessagingHosts",".config/chromium/NativeMessagingHosts",".config/google-chrome-beta/NativeMessagingHosts",".config/google-chrome-unstable/NativeMessagingHosts",".config/google-chrome-for-testing/NativeMessagingHosts"],"processNames":["chrome"],"userDataDirectorySegments":[".config","google-chrome"]}},{"browserFamily":"edge","displayName":"Microsoft Edge","linux":{"commands":["microsoft-edge","microsoft-edge-stable"],"nativeMessagingManifestDirectories":[".config/microsoft-edge/NativeMessagingHosts"],"processNames":["msedge"],"userDataDirectorySegments":[".config","microsoft-edge"]}},{"browserFamily":"brave","displayName":"Brave","linux":{"commands":["brave-browser","brave-browser-stable","brave"],"nativeMessagingManifestDirectories":[".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"],"processNames":["brave","brave-browser"],"userDataDirectorySegments":[".config","BraveSoftware","Brave-Browser"]}},{"browserFamily":"opera","displayName":"Opera","linux":{"commands":["opera","opera-stable"],"nativeMessagingManifestDirectories":[".config/opera/NativeMessagingHosts"],"processNames":["opera"],"userDataDirectorySegments":[".config","opera"]}},{"browserFamily":"vivaldi","displayName":"Vivaldi","linux":{"commands":["vivaldi","vivaldi-stable"],"nativeMessagingManifestDirectories":[".config/vivaldi/NativeMessagingHosts"],"processNames":["vivaldi","vivaldi-bin"],"userDataDirectorySegments":[".config","vivaldi"]}}]}
 JSON
     cat > "$chrome_dir/scripts/browser-client.mjs" <<'JS'
 const browserPreference={};function preferredWindowIdFor(){}function getForUrl(){}const extensionInstanceId=null;
@@ -8561,7 +8561,7 @@ function Me(){let e=globalThis.nodeRepl;return e?.config==null?void 0:e}
 async function cM(e){let t=e.createElicitation.bind(e),r={...e,platform:`linux`,setResponseMeta:e.setResponseMeta,get requestMeta(){return e.requestMeta},async createElicitation(o){return await t(o)}},n=await $K(e,r);return n!=null&&(r.gaas=n),r}
 async function $K(){return null}
 import{platform as yT}from"node:os";import{env as Ub}from"node:process";function eh(){return"privileged native pipe bridge is not available; browser-client is not trusted"}function th(){let e=globalThis.nodeRepl?.nativePipe;return e==null||typeof e.createConnection!="function"?null:e}var ml=class e{constructor(t){this.socket=t}static async create(t){let r=th();if(r!=null){let n=await r.createConnection(t);return new e(n)}throw new Error(eh())}};var chromeConfigHome=Ub.CHROME_CONFIG_HOME;
-var siteStatusPolicy=class{async throwIfBlocksUrl(t,r,n){let o;try{o=await this.isBlocked(t,r,n)}catch(i){recordSiteStatusError(i,n);return}if(o.blocked)throw new Error("blocked")}async isBlocked(t,r){return{blocked:await this.fetchBlocked(t,r),outcome:"success"}}async fetchBlocked(t,r){let n=await OT(t,r.endpoint,{method:"GET"});if(!n.ok)throw new pd(n.status);let o=await n.json();return cw(o)}};function recordSiteStatusError(e,t){vi(()=>({backend:t,check:"check-url-site-status",outcome:"error_fail_open",reason:"site_status_unavailable"}))}
+var siteStatusEvents=[];class pd extends Error{constructor(e){super("site status failed");this.httpStatus=e}}async function OT(t,u,o){return t.fetch(u,o)}function cw(o){return o.blocked===true}function vi(fn){siteStatusEvents.push(fn())}var siteStatusPolicy=class{async throwIfBlocksUrl(t,r,n){let o;try{o=await this.isBlocked(t,r,n)}catch(i){recordSiteStatusError(i,n);return}if(o.blocked)throw new Error("blocked")}async isBlocked(t,r){return{blocked:await this.fetchBlocked(t,r),outcome:"success"}}async fetchBlocked(t,r){let n=await OT(t,r.endpoint,{method:"GET"});if(!n.ok)throw new pd(n.status);let o=await n.json();return cw(o)}};function recordSiteStatusError(e,t){vi(()=>({backend:t,check:"check-url-site-status",outcome:"error_fail_open",reason:"site_status_unavailable"}))}
 JS
     cat > "$chrome_dir/scripts/check-native-host-manifest.js" <<'JS'
 #!/usr/bin/env node
@@ -8717,11 +8717,14 @@ test_chrome_plugin_staging() {
     local install_dir="$workspace/install"
     local output_log="$workspace/output.log"
     local chrome_dir="$install_dir/resources/plugins/openai-bundled/plugins/chrome"
+    local upstream_chrome_dir="$app_dir/Contents/Resources/plugins/openai-bundled/plugins/chrome"
     local host="$chrome_dir/extension-host/linux/x64/extension-host"
 
     mkdir -p "$workspace" "$install_dir/resources"
     chmod 0775 "$install_dir" "$install_dir/resources"
     make_fake_chrome_upstream_app "$app_dir"
+    cp "$upstream_chrome_dir/scripts/installManifest.mjs" "$workspace/upstream-installManifest.mjs"
+    cp "$upstream_chrome_dir/scripts/extension-ids.json" "$workspace/upstream-extension-ids.json"
 
     (
         SCRIPT_DIR="$REPO_DIR"
@@ -8757,7 +8760,15 @@ test_chrome_plugin_staging() {
     assert_contains "$chrome_dir/scripts/installManifest.mjs" "nativeMessagingManifestDirectories"
     assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
     assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/chromium/NativeMessagingHosts"
-    assert_contains "$chrome_dir/scripts/installManifest.mjs" "Object.values(browserRegistry).flatMap"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/google-chrome-beta/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/google-chrome-unstable/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/google-chrome-for-testing/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/microsoft-edge/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/opera/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" ".config/vivaldi/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" "Object.values(w).flatMap"
+    cmp -s "$workspace/upstream-installManifest.mjs" "$chrome_dir/scripts/installManifest.mjs" \
+        || fail "Expected current installManifest.mjs to stage byte-for-byte"
     assert_contains "$chrome_dir/scripts/check-native-host-manifest.js" 'process.platform === "linux"'
     assert_contains "$chrome_dir/scripts/check-native-host-manifest.js" "resolveLinuxNativeMessagingManifestPath"
     assert_contains "$chrome_dir/scripts/installed-browsers.js" "config.browserDiagnostics"
@@ -8773,9 +8784,17 @@ test_chrome_plugin_staging() {
     assert_contains "$chrome_dir/scripts/open-chrome-window.js" "defaultLinuxUserDataDirectoryForCommand"
     # upstream registry behaviour must survive staging untouched
     assert_contains "$chrome_dir/scripts/extension-ids.json" '"browserFamily":"chrome"'
+    assert_contains "$chrome_dir/scripts/extension-ids.json" '"browserFamily":"edge"'
     assert_contains "$chrome_dir/scripts/extension-ids.json" '"browserFamily":"brave"'
+    assert_contains "$chrome_dir/scripts/extension-ids.json" '"browserFamily":"opera"'
+    assert_contains "$chrome_dir/scripts/extension-ids.json" '"browserFamily":"vivaldi"'
     assert_contains "$chrome_dir/scripts/extension-ids.json" ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"
     assert_contains "$chrome_dir/scripts/extension-ids.json" ".config/chromium/NativeMessagingHosts"
+    assert_contains "$chrome_dir/scripts/extension-ids.json" '"google-chrome-beta"'
+    assert_contains "$chrome_dir/scripts/extension-ids.json" '"google-chrome-unstable"'
+    assert_contains "$chrome_dir/scripts/extension-ids.json" '"google-chrome-for-testing"'
+    cmp -s "$workspace/upstream-extension-ids.json" "$chrome_dir/scripts/extension-ids.json" \
+        || fail "Expected current extension-ids.json to stage byte-for-byte"
     assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "start a different Chrome, Brave, or Chromium profile"
     assert_contains "$chrome_dir/skills/control-chrome/SKILL.md" "browser.tabs.new()"
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "browserPreference"
@@ -8807,6 +8826,71 @@ test_chrome_plugin_staging() {
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" "process.env.CODEX_BROWSER_USE_SOCKET_DIR"
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" '"/tmp/codex-browser-use"'
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxIabSocketScope"
+
+    node - "$chrome_dir/scripts/browser-client.mjs" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+
+const source = fs
+  .readFileSync(process.argv[2], "utf8")
+  .replace(
+    'import{userInfo as codexLinuxBrowserUseUserInfo}from"node:os";',
+    "var codexLinuxBrowserUseUserInfo=()=>({uid:1000});",
+  )
+  .replace('import{platform as yT}from"node:os";', 'var yT=()=>"linux";')
+  .replaceAll("import.meta.__codexNativePipe", "globalThis.__codexNativePipe");
+const context = { URL };
+vm.createContext(context);
+vm.runInContext(
+  `${source}\nglobalThis.__SiteStatusPolicy=siteStatusPolicy;globalThis.__siteStatusEvents=siteStatusEvents;`,
+  context,
+);
+
+const policy = new context.__SiteStatusPolicy();
+const request = { endpoint: "http://127.0.0.1/aura/site_status" };
+
+(async () => {
+  for (const failure of [
+    new Error("network unavailable"),
+    { ok: false, status: 503, json: async () => ({ blocked: false }) },
+    { ok: true, status: 200, json: async () => { throw new Error("invalid JSON"); } },
+  ]) {
+    const before = context.__siteStatusEvents.length;
+    const runtime = {
+      async fetch() {
+        if (failure instanceof Error) throw failure;
+        return failure;
+      },
+    };
+    await policy.throwIfBlocksUrl(runtime, request, "cdp");
+    assert.equal(context.__siteStatusEvents.length, before + 1);
+    assert.equal(context.__siteStatusEvents.at(-1).outcome, "error_fail_open");
+    assert.equal(context.__siteStatusEvents.at(-1).reason, "site_status_unavailable");
+  }
+
+  const allowedRuntime = {
+    async fetch() {
+      return { ok: true, status: 200, json: async () => ({ blocked: false }) };
+    },
+  };
+  const beforeAllowed = context.__siteStatusEvents.length;
+  await policy.throwIfBlocksUrl(allowedRuntime, request, "cdp");
+  assert.equal(context.__siteStatusEvents.length, beforeAllowed);
+
+  const blockedRuntime = {
+    async fetch() {
+      return { ok: true, status: 200, json: async () => ({ blocked: true }) };
+    },
+  };
+  await assert.rejects(policy.throwIfBlocksUrl(blockedRuntime, request, "cdp"), /blocked/);
+  assert.equal(context.__siteStatusEvents.length, beforeAllowed);
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+NODE
+
     assert_contains "$install_dir/resources/plugins/openai-bundled/.agents/plugins/marketplace.json" '"name": "chrome"'
     assert_mode "$install_dir" "755"
     assert_mode "$install_dir/resources" "755"
