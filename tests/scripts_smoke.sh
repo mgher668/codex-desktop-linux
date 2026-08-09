@@ -8472,7 +8472,7 @@ JSON
 {"name":"chrome","version":"0.1.7"}
 JSON
     cat > "$chrome_dir/scripts/installManifest.mjs" <<'JS'
-var n={extensionId:"hehggadaopoacecdllhhajmbjkdcmajg",extensionHostName:"com.openai.codexextension"};var p=o=>{let t=`${o.extensionHostName}.json`,r={darwin:["Library/Application Support/Google/Chrome/NativeMessagingHosts"],linux:[".config/google-chrome/NativeMessagingHosts"],win32:["AppData/Local/OpenAI/extension"]}[m.platform()];return r.map(s=>l.resolve(m.homedir(),s,t))};
+var browserRegistry={chrome:{linux:{nativeMessagingManifestDirectories:[".config/google-chrome/NativeMessagingHosts",".config/chromium/NativeMessagingHosts"]}},brave:{linux:{nativeMessagingManifestDirectories:[".config/BraveSoftware/Brave-Browser/NativeMessagingHosts"]}}};var manifestDirectories=Object.values(browserRegistry).flatMap(browser=>browser.linux.nativeMessagingManifestDirectories);
 JS
     cat > "$chrome_dir/skills/control-chrome/SKILL.md" <<'MD'
 # Chrome
@@ -8491,11 +8491,12 @@ function Me(){let e=globalThis.nodeRepl;return e?.config==null?void 0:e}
 async function cM(e){let t=e.createElicitation.bind(e),r={...e,platform:`linux`,setResponseMeta:e.setResponseMeta,get requestMeta(){return e.requestMeta},async createElicitation(o){return await t(o)}},n=await $K(e,r);return n!=null&&(r.gaas=n),r}
 async function $K(){return null}
 import{platform as yT}from"node:os";import{env as Ub}from"node:process";function eh(){return"privileged native pipe bridge is not available; browser-client is not trusted"}function th(){let e=globalThis.nodeRepl?.nativePipe;return e==null||typeof e.createConnection!="function"?null:e}var ml=class e{constructor(t){this.socket=t}static async create(t){let r=th();if(r!=null){let n=await r.createConnection(t);return new e(n)}throw new Error(eh())}};var chromeConfigHome=Ub.CHROME_CONFIG_HOME;
-async fetchBlocked(t,r){let n=await OT(t,r.endpoint,{method:"GET"});if(!n.ok)throw new pd(n.status);let o=await n.json();return cw(o)}
+var siteStatusPolicy=class{async throwIfBlocksUrl(t,r,n){let o;try{o=await this.isBlocked(t,r,n)}catch(i){recordSiteStatusError(i,n);return}if(o.blocked)throw new Error("blocked")}async isBlocked(t,r){return{blocked:await this.fetchBlocked(t,r),outcome:"success"}}async fetchBlocked(t,r){let n=await OT(t,r.endpoint,{method:"GET"});if(!n.ok)throw new pd(n.status);let o=await n.json();return cw(o)}};function recordSiteStatusError(e,t){vi(()=>({backend:t,check:"check-url-site-status",outcome:"error_fail_open",reason:"site_status_unavailable"}))}
 JS
     cat > "$chrome_dir/scripts/check-native-host-manifest.js" <<'JS'
 #!/usr/bin/env node
-function getNativeHostManifestLocation() {
+let resolveLinuxNativeMessagingManifestPath;
+function getNativeHostManifestLocation(expectedBrowser) {
   if (process.platform === "win32") {
     const registryKey = `${WINDOWS_NATIVE_HOST_REGISTRY_KEY_PREFIX}\\${expectedHostName}`;
     const registryManifestPath = readWindowsRegistryDefaultValue(registryKey);
@@ -8508,34 +8509,55 @@ function getNativeHostManifestLocation() {
     };
   }
 
+  if (process.platform === "linux") {
+    return {
+      manifestPath: resolveLinuxNativeMessagingManifestPath({
+        browser: expectedBrowser,
+        env: process.env,
+        homedir: os.homedir(),
+        hostName: expectedHostName,
+        path,
+      }),
+      registryKey: null,
+      registryManifestPath: null,
+      registryKeyExists: null,
+    };
+  }
+
   throw new Error(
-    `Unsupported platform for native host manifest check: ${process.platform}. This script supports macOS and Windows.`,
+    `Unsupported platform for native host manifest check: ${process.platform}.`,
   );
 }
 JS
     cat > "$chrome_dir/scripts/installed-browsers.js" <<'JS'
 #!/usr/bin/env node
-const KNOWN_BROWSERS = [
-  {
-    name: "Google Chrome",
-    bundleIds: ["com.google.Chrome"],
-    appNames: ["Google Chrome.app"],
-    commands: ["google-chrome", "chrome"],
-    windowsExecutable: "chrome.exe",
-  },
-];
+let knownBrowsers;
+function loadKnownBrowsers(config) {
+  knownBrowsers = config.browserDiagnostics.map((browser) => ({
+    browserFamily: browser.browserFamily,
+    name: browser.displayName,
+    commands: browser.linux.commands,
+  }));
+}
 JS
     cat > "$chrome_dir/scripts/chrome-is-running.js" <<'JS'
 #!/usr/bin/env node
-const CHROME_PROCESS_NAMES_BY_PLATFORM = {
-  darwin: new Set(["Google Chrome", "Google Chrome Helper"]),
-  win32: new Set(["chrome.exe"]),
-};
+let getBrowserDiagnostics;
+function findRunningChromeProcesses(browser) {
+  return new Set(browser.linux.processNames);
+}
 JS
     cat > "$chrome_dir/scripts/check-extension-installed.js" <<'JS'
 #!/usr/bin/env node
-function resolveChromeUserDataDirectory() {
-  return path.join(os.homedir(), ".config", "google-chrome");
+let resolveBrowserUserDataDirectory;
+function resolveChromeUserDataDirectory(browser) {
+  return resolveBrowserUserDataDirectory({
+    browser,
+    env: process.env,
+    homedir: os.homedir(),
+    path,
+    platform: process.platform,
+  });
 }
 
 function resolveChromeProfileDirectory(userDataDirectory) {
@@ -8563,8 +8585,15 @@ function isUsableChromeProfile(userDataDirectory, profileDirectory) {
 JS
     cat > "$chrome_dir/scripts/open-chrome-window.js" <<'JS'
 #!/usr/bin/env node
-function resolveChromeUserDataDirectory() {
-  return path.join(os.homedir(), ".config", "google-chrome");
+let resolveBrowserUserDataDirectory;
+function resolveChromeUserDataDirectory(browser) {
+  return resolveBrowserUserDataDirectory({
+    browser,
+    env: process.env,
+    homedir: os.homedir(),
+    path,
+    platform: process.platform,
+  });
 }
 
 function resolveChromeProfileDirectory(userDataDirectory) {
@@ -8590,7 +8619,11 @@ function isUsableChromeProfile(userDataDirectory, profileDirectory) {
   return profileDirectory.length > 0;
 }
 
-function getOpenChromeCommand(profileDirectory) {
+function commandPath(command) {
+  return command;
+}
+
+function getOpenChromeCommand(browser, profileDirectory) {
   const chromeArgs = [
     `--profile-directory=${profileDirectory}`,
     "--new-window",
@@ -8598,7 +8631,9 @@ function getOpenChromeCommand(profileDirectory) {
   ];
 
   return {
-    command: "google-chrome",
+    command:
+      browser.linux.commands.find((command) => commandPath(command) != null) ??
+      browser.linux.commands[0],
     args: chromeArgs,
   };
 }
@@ -8649,8 +8684,18 @@ test_chrome_plugin_staging() {
     assert_mode "$chrome_dir/scripts/chrome-is-running.js" "755"
     assert_mode "$chrome_dir/scripts/check-extension-installed.js" "755"
     assert_mode "$chrome_dir/scripts/open-chrome-window.js" "755"
+    assert_contains "$chrome_dir/scripts/installManifest.mjs" "nativeMessagingManifestDirectories"
+    assert_contains "$chrome_dir/scripts/check-native-host-manifest.js" 'process.platform === "linux"'
+    assert_contains "$chrome_dir/scripts/check-native-host-manifest.js" "resolveLinuxNativeMessagingManifestPath"
+    assert_contains "$chrome_dir/scripts/installed-browsers.js" "config.browserDiagnostics"
+    assert_not_contains "$chrome_dir/scripts/installed-browsers.js" "KNOWN_BROWSERS"
+    assert_contains "$chrome_dir/scripts/chrome-is-running.js" "getBrowserDiagnostics"
+    assert_not_contains "$chrome_dir/scripts/chrome-is-running.js" "CHROME_PROCESS_NAMES_BY_PLATFORM"
+    assert_contains "$chrome_dir/scripts/check-extension-installed.js" "resolveBrowserUserDataDirectory"
     assert_contains "$chrome_dir/scripts/check-extension-installed.js" "resolveChromeProfileDirectoryFromRunningProcess"
     assert_contains "$chrome_dir/scripts/check-extension-installed.js" "defaultLinuxUserDataDirectoryForCommand"
+    assert_contains "$chrome_dir/scripts/open-chrome-window.js" "resolveBrowserUserDataDirectory"
+    assert_contains "$chrome_dir/scripts/open-chrome-window.js" "browser.linux.commands"
     assert_contains "$chrome_dir/scripts/open-chrome-window.js" "resolveChromeProfileDirectoryFromRunningProcess"
     assert_contains "$chrome_dir/scripts/open-chrome-window.js" "defaultLinuxUserDataDirectoryForCommand"
     # upstream registry behaviour must survive staging untouched
@@ -8681,6 +8726,9 @@ test_chrome_plugin_staging() {
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "nativePipe??import.meta.__codexNativePipe"
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxNativePipeFallback"
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" 'await import("node:net")'
+    assert_contains "$chrome_dir/scripts/browser-client.mjs" 'outcome:"error_fail_open"'
+    assert_contains "$chrome_dir/scripts/browser-client.mjs" 'reason:"site_status_unavailable"'
+    assert_not_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxSiteStatusAllowlistFallback"
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxPerUserBrowserSocketDir"
     assert_contains "$chrome_dir/scripts/browser-client.mjs" "codexLinuxBrowserUseUserInfo"
     assert_not_contains "$chrome_dir/scripts/browser-client.mjs" "process.env.CODEX_BROWSER_USE_SOCKET_DIR"
