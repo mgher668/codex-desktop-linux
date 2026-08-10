@@ -12,6 +12,7 @@ const {
 } = require("../../scripts/lib/linux-features.js");
 const {
 	CHATGPT_SIDEBAR_ASSET_PATTERN,
+	DELETE_MENU_ID,
 	NEW_THREAD_ROUTE,
 	RUNTIME_MARKER,
 	applyConversationDeletePatch,
@@ -22,7 +23,7 @@ const SIDEBAR_FIXTURE = [
 	"var OW={newChat:{id:`chatgptConversations.newChat`,defaultMessage:`New chat`,description:`Fallback title`},archive:{id:`chatgptConversations.sidebar.archive`,defaultMessage:`Archive chat`,description:`Action label to archive a ChatGPT conversation in the sidebar`},archiveError:{id:`chatgptConversations.sidebar.archiveError`,defaultMessage:`Failed to archive conversation`,description:`Archive error`}};",
 	"var uBr=e=>true,lBr=e=>true;var yBr=class{async list({}){let l=await this.request.listConversations();return{...l,items:l.items?.filter(uBr)??[]}}async getBatch(e,t){return(await this.request.getConversationsBatch(e,t)).filter(uBr)}async listPinnedConversationItems(){return(await this.request.listPinnedItems({itemType:`conversation`})).filter(lBr)}async listProjectConversations({cursor:e=null,limit:t=5,ownedOnly:n=!0,projectId:r}){let i=await this.request.listProjectConversations({cursor:e,limit:t,ownedOnly:n,projectId:r});return{cursor:i.cursor,items:i.items?.filter(uBr)??[]}}};",
 	"/* function y0(e,t){ */;/* function KDa( */;/* safeDelete(`/conversation/id/{conversation_id}`, */",
-	"function VBc(e){let t=(0,w5.c)(83),{conversation:n,isActive:o,isArchivePending:w,route:p,title:v}=e,E=Fo(Q),D=Vd(),O=AC();let oe=async()=>{if(n==null||w)return[];let e=await FRc(E,{conversationId:n.id,projectId:PW(n)});return[{id:`rename-chatgpt-conversation`,message:OW.rename,onSelect:re},...e,{id:`archive-chatgpt-conversation`,message:OW.archive,onSelect:ae}]};return oe}",
+	"var archiveAction=()=>{},renameAction=()=>{};function VBc(e){let t=(0,w5.c)(83),{conversation:n,isActive:o,isArchivePending:w,route:p,title:v}=e,E=Fo(Q),D=Vd(),O=AC(),ae=archiveAction,re=renameAction,k=false,L=OW.archive;let oe;t[27]!==n||t[28]!==ae||t[29]!==re||t[30]!==w||t[31]!==k||t[32]!==L||t[33]!==E?(oe=async()=>{return[{id:`archive-chatgpt-conversation`,message:OW.archive,onSelect:ae}]},t[27]=n,t[28]=ae,t[29]=re,t[30]=w,t[31]=k,t[32]=L,t[33]=E,t[34]=oe):oe=t[34];return oe}",
 ].join("");
 
 function captureWarnings(fn) {
@@ -238,13 +239,102 @@ test("active deletion uses upstream new-chat state handler", async () => {
 		`${patched};globalThis.deleteChat= ${RUNTIME_MARKER};`,
 		context,
 	);
-	await context.deleteChat(scope, { id: "conversation-123" }, "Example chat", false, true, {
-		formatMessage: (message) => message.defaultMessage,
-	}, () => {
-		throw new Error("fallback navigator should not run");
-	});
+	await context.deleteChat(
+		scope,
+		{ id: "conversation-123" },
+		"Example chat",
+		false,
+		true,
+		{
+			formatMessage: (message) => message.defaultMessage,
+		},
+		() => {
+			throw new Error("fallback navigator should not run");
+		},
+	);
 
 	assert.deepEqual(started, [scope]);
+});
+
+test("compiled menu cache refreshes delete callback when active state changes", async () => {
+	const patched = applyConversationDeletePatch(SIDEBAR_FIXTURE);
+	const cache = [];
+	const deleteToken = {};
+	const toastToken = {};
+	const deleted = [];
+	const navigated = [];
+	const scope = {
+		queryClient: {},
+		get(token) {
+			if (token === deleteToken) {
+				return {
+					delete(id) {
+						deleted.push(id);
+						return Promise.resolve();
+					},
+				};
+			}
+			assert.equal(token, toastToken);
+			return { danger: () => assert.fail("unexpected error toast") };
+		},
+	};
+	const intl = {
+		formatMessage(message, values) {
+			return message.defaultMessage.replace("{title}", values?.title ?? "");
+		},
+	};
+	const context = {
+		w5: {
+			c(size) {
+				assert.equal(size, 84);
+				return cache;
+			},
+		},
+		Q: {},
+		OW: {
+			archive: "Archive chat",
+			deleteConfirm: {
+				defaultMessage: "Delete {title}?",
+			},
+			deleteError: { defaultMessage: "Delete failed" },
+		},
+		Fo: () => scope,
+		Vd: () => intl,
+		AC: () => (route) => navigated.push(route),
+		archiveAction: () => {},
+		renameAction: () => {},
+		KDa() {},
+		yv: toastToken,
+		zN: deleteToken,
+		window: { confirm: () => true },
+	};
+
+	vm.runInNewContext(`${patched};globalThis.renderSidebar=VBc;`, context);
+
+	const conversation = { id: "conversation-123" };
+	const firstMenu = await context.renderSidebar({
+		conversation,
+		isActive: false,
+		isArchivePending: false,
+		route: "/chat/conversation-123",
+		title: "Example chat",
+	})();
+	await firstMenu.find((item) => item.id === DELETE_MENU_ID).onSelect();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(deleted, ["conversation-123"]);
+	assert.deepEqual(navigated, []);
+
+	const secondMenu = await context.renderSidebar({
+		conversation,
+		isActive: true,
+		isArchivePending: false,
+		route: "/chat/conversation-123",
+		title: "Example chat",
+	})();
+	await secondMenu.find((item) => item.id === DELETE_MENU_ID).onSelect();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(deleted, ["conversation-123", "conversation-123"]);
+	assert.deepEqual(navigated, [NEW_THREAD_ROUTE]);
 });
 
 test("project conversation refetch filters deleted tombstone", async () => {
@@ -272,9 +362,16 @@ test("project conversation refetch filters deleted tombstone", async () => {
 		`${patched};globalThis.deleteChat= ${RUNTIME_MARKER};`,
 		context,
 	);
-	await context.deleteChat(scope, { id: "conversation-123" }, "Example chat", false, false, {
-		formatMessage: (message) => message.defaultMessage,
-	});
+	await context.deleteChat(
+		scope,
+		{ id: "conversation-123" },
+		"Example chat",
+		false,
+		false,
+		{
+			formatMessage: (message) => message.defaultMessage,
+		},
+	);
 
 	const client = new context.yBr();
 	client.request = {
@@ -283,7 +380,9 @@ test("project conversation refetch filters deleted tombstone", async () => {
 			items: [{ id: "conversation-123" }, { id: "conversation-456" }],
 		}),
 	};
-	const listed = await client.listProjectConversations({ projectId: "project-123" });
+	const listed = await client.listProjectConversations({
+		projectId: "project-123",
+	});
 	assert.equal(listed.cursor, null);
 	assert.deepEqual(listed.items, [{ id: "conversation-456" }]);
 });

@@ -12,6 +12,12 @@ const LOCALIZATION_NEEDLE = `${ARCHIVE_MESSAGE},archiveError:`;
 const LOCALIZATION_REPLACEMENT = `${ARCHIVE_MESSAGE},${DELETE_MESSAGES}archiveError:`;
 const SIDEBAR_MENU_NEEDLE =
 	"{id:`archive-chatgpt-conversation`,message:OW.archive,onSelect:ae}]}";
+const MENU_CACHE_GUARD_NEEDLE =
+	"t[27]!==n||t[28]!==ae||t[29]!==re||t[30]!==w||t[31]!==k||t[32]!==L||t[33]!==E?(oe=async()=>{";
+const MENU_CACHE_GUARD_REPLACEMENT =
+	"t[27]!==n||t[28]!==ae||t[29]!==re||t[30]!==w||t[31]!==k||t[32]!==L||t[33]!==E||t[83]!==o?(oe=async()=>{";
+const MENU_CACHE_ASSIGNMENT_NEEDLE = "t[33]=E,t[34]=oe):oe=t[34]";
+const MENU_CACHE_ASSIGNMENT_REPLACEMENT = "t[33]=E,t[83]=o,t[34]=oe):oe=t[34]";
 const SIDEBAR_MENU_REPLACEMENT = `{id:\`archive-chatgpt-conversation\`,message:OW.archive,onSelect:ae},{id:\`${DELETE_MENU_ID}\`,message:OW.delete,onSelect:()=>${RUNTIME_MARKER}(E,n,v,w,o,D,O)}]}`;
 const SIDEBAR_COMPONENT_NEEDLE = "function VBc(e){let t=(0,w5.c)(83),";
 const CACHE_EVICTION_NEEDLE = "function KDa(";
@@ -57,6 +63,8 @@ function applyConversationDeletePatch(source) {
 			["ChatGPT conversation cache helper", CACHE_EVICTION_NEEDLE],
 			["ChatGPT conversation delete API client", DELETE_API_NEEDLE],
 			["ChatGPT new-chat state handler", NEW_CHAT_HANDLER_NEEDLE],
+			["ChatGPT sidebar menu cache guard", MENU_CACHE_GUARD_NEEDLE],
+			["ChatGPT sidebar menu cache assignment", MENU_CACHE_ASSIGNMENT_NEEDLE],
 			["ChatGPT conversation list response filter", LIST_FILTER_NEEDLE],
 			["ChatGPT conversation batch response filter", BATCH_FILTER_NEEDLE],
 			["ChatGPT pinned conversation response filter", PINNED_FILTER_NEEDLE],
@@ -85,8 +93,16 @@ function applyConversationDeletePatch(source) {
 			PROJECT_LIST_FILTER_REPLACEMENT,
 		);
 		patched = patched.replace(
+			MENU_CACHE_GUARD_NEEDLE,
+			MENU_CACHE_GUARD_REPLACEMENT,
+		);
+		patched = patched.replace(
+			MENU_CACHE_ASSIGNMENT_NEEDLE,
+			MENU_CACHE_ASSIGNMENT_REPLACEMENT,
+		);
+		patched = patched.replace(
 			SIDEBAR_COMPONENT_NEEDLE,
-			`${RUNTIME_SOURCE}${SIDEBAR_COMPONENT_NEEDLE}`,
+			`${RUNTIME_SOURCE}${SIDEBAR_COMPONENT_NEEDLE.replace("(83)", "(84)")}`,
 		);
 		patched = patched.replace(SIDEBAR_MENU_NEEDLE, SIDEBAR_MENU_REPLACEMENT);
 
@@ -94,6 +110,9 @@ function applyConversationDeletePatch(source) {
 			!patched.includes(RUNTIME_MARKER) ||
 			!patched.includes(`${DELETED_IDS}.add(t.id)`) ||
 			!patched.includes(LIST_FILTER_REPLACEMENT) ||
+			!patched.includes(MENU_CACHE_GUARD_REPLACEMENT) ||
+			!patched.includes(MENU_CACHE_ASSIGNMENT_REPLACEMENT) ||
+			!patched.includes("function VBc(e){let t=(0,w5.c)(84),") ||
 			!patched.includes(`id:\`${DELETE_MENU_ID}\``) ||
 			!patched.includes("message:OW.delete")
 		) {
