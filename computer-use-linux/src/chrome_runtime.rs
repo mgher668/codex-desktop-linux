@@ -3297,6 +3297,53 @@ mod tests {
             .unwrap_or_else(|| panic!("could not resolve test executable from PATH: {name}"))
     }
 
+    fn fake_path_dependent_python_launcher(root: &Path, python: &Path) -> PathBuf {
+        fs::create_dir_all(root).unwrap();
+        fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
+        std::os::unix::fs::symlink(python, root.join("selected-python")).unwrap();
+        let launcher = root.join("python3");
+        fs::write(
+            &launcher,
+            "#!/usr/bin/env bash\nexec \"${0%/*}/selected-python\" \"$@\"\n",
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o700)).unwrap();
+        launcher
+    }
+
+    fn resolve_test_python_interpreter(launcher: &Path) -> PathBuf {
+        let output = Command::new(launcher)
+            .arg("-c")
+            .arg(
+                "import os, sys; sys.stdout.buffer.write(os.fsencode(os.path.realpath(sys.executable)))",
+            )
+            .output()
+            .unwrap_or_else(|error| {
+                panic!(
+                    "failed to query Python interpreter through {}: {error}",
+                    launcher.display()
+                )
+            });
+        assert!(
+            output.status.success(),
+            "Python interpreter query through {} failed\nstdout:\n{}\nstderr:\n{}",
+            launcher.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let interpreter = PathBuf::from(OsString::from_vec(output.stdout));
+        let interpreter = fs::canonicalize(&interpreter).unwrap_or_else(|error| {
+            panic!(
+                "failed to canonicalize resolved Python interpreter {}: {error}",
+                interpreter.display()
+            )
+        });
+        let metadata = fs::metadata(&interpreter).unwrap();
+        assert!(metadata.is_file());
+        assert_ne!(metadata.permissions().mode() & 0o111, 0);
+        interpreter
+    }
+
     fn fake_socket_app_server(root: &Path) -> PathBuf {
         let path = root.join("fake-app-server.py");
         let python = test_executable("python3");
@@ -3398,7 +3445,14 @@ while True:
         const REQUIRE_DEFAULT_COMMAND: &str = "CODEX_TEST_REQUIRE_DEFAULT_COMMAND";
 
         if env::var_os(CHILD).is_none() {
-            let python = test_executable("python3");
+            let python_launcher_root = test_root("npm-shebang-python-launcher");
+            let python_launcher = fake_path_dependent_python_launcher(
+                &python_launcher_root,
+                &test_executable("python3"),
+            );
+            let python = resolve_test_python_interpreter(&python_launcher);
+            fs::remove_dir_all(&python_launcher_root).unwrap();
+            assert!(!python.starts_with(&python_launcher_root));
             for case in ["present", "absent", "empty"] {
                 let root = test_root(&format!("npm-shebang-trusted-node-{case}"));
                 let ambient_dir = root.join("ambient-bin");
