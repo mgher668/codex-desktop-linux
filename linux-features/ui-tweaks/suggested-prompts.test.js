@@ -54,10 +54,10 @@ function appPageFixture() {
 
 function mainFixture() {
   return [
-    "function nt(e){return Xe().ambientSuggestions&&e.getEffective(n.oa.enabled.key)===!0}",
-    "async function rt({appServerConnection:e,settingsStore:t}){",
-    "if(!nt(t))return{enabled:!1,staleTimeMs:n.ml(null)};let r=await e.getAccount();",
-    "return{enabled:n.pl(r.account),staleTimeMs:n.ml(r.account)}}",
+    "function Or(e){return br().ambientSuggestions&&e.getEffective(n.Wi.enabled.key)===!0}",
+    "async function kr({appServerConnection:e,settingsStore:t}){",
+    "let{ambientSuggestionsStaleTimeMs:n}=br();if(!Or(t)||n==null)return{enabled:!1};",
+    "let{account:r}=await e.getAccount();return ie(r)?{enabled:!0,staleTimeMs:n}:{enabled:!1}}",
   ].join("");
 }
 
@@ -134,8 +134,9 @@ test("main patch enables refresh while preserving the upstream account call", ()
 
   assert.notEqual(patched, source);
   assert.equal((patched.match(new RegExp(MAIN_ELIGIBILITY_MARKER, "g")) || []).length, 1);
-  assert.match(patched, /n\.pl\(r\.account\)/);
-  assert.match(patched, /staleTimeMs:n\.ml\(r\.account\)/);
+  assert.match(patched, /ie\(r\)/);
+  assert.match(patched, /staleTimeMs:n/);
+  assert.match(patched, /await e\.getAccount\(\)/);
   assert.equal(applySuggestedPromptsMainPatch(patched), patched);
 });
 
