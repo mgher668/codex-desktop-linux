@@ -140,6 +140,50 @@ test("main patch enables refresh while preserving the upstream account call", ()
   assert.equal(applySuggestedPromptsMainPatch(patched), patched);
 });
 
+test("main patch preserves current minified aliases", () => {
+  const source = [
+    "async function refresh({appServerConnection:connection,settingsStore:store}){",
+    "let{ambientSuggestionsStaleTimeMs:stale}=featureState();",
+    "if(!settingsEligible(store)||stale==null)return{enabled:!1};",
+    "let{account:account}=await connection.getAccount();",
+    "return accountEligible(account)?{enabled:!0,staleTimeMs:stale}:{enabled:!1}}",
+  ].join("");
+  const patched = applySuggestedPromptsMainPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.match(patched, /featureState\(\)/);
+  assert.match(patched, /settingsEligible\(store\)/);
+  assert.match(patched, /await connection\.getAccount\(\)/);
+  assert.match(patched, /accountEligible\(account\)/);
+  assert.match(patched, /staleTimeMs:stale/);
+  assert.equal(applySuggestedPromptsMainPatch(patched), patched);
+});
+
+test("main patch rejects incomplete, duplicate, and mixed contracts byte-identically", () => {
+  const current = mainFixture();
+  const patched = applySuggestedPromptsMainPatch(current);
+  const sources = [
+    current.replace("ambientSuggestionsStaleTimeMs", "ambientSuggestionStaleTimeMs"),
+    current.replace("await e.getAccount()", "await e.account()"),
+    patched.replace("(ie(r),function", "(ie(r)&&function"),
+    patched.replace("staleTimeMs:n", "staleTimeMs:refreshMs"),
+    patched.replace(
+      `function ${MAIN_ELIGIBILITY_MARKER}(){return!0}`,
+      `function ${MAIN_ELIGIBILITY_MARKER}(){return!1}`,
+    ),
+    current + current,
+    patched + patched,
+    current + patched,
+  ];
+
+  for (const source of sources) {
+    const result = captureWarnings(() => applySuggestedPromptsMainPatch(source));
+    assert.equal(result.value, source);
+    assert.equal(result.warnings.length, 1);
+    assert.match(result.warnings[0], /current Suggested Prompts main process contract/);
+  }
+});
+
 test("Home content renders generated suggestions instead of selecting curated cards", () => {
   const source = homeContentFixture();
   const patched = applySuggestedPromptsHomeContentPatch(source);
