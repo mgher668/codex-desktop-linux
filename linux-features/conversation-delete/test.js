@@ -21,7 +21,7 @@ const {
 const SIDEBAR_FIXTURE = [
 	"var OW={newChat:{id:`chatgptConversations.newChat`,defaultMessage:`New chat`,description:`Fallback title`},archive:{id:`chatgptConversations.sidebar.archive`,defaultMessage:`Archive chat`,description:`Action label to archive a ChatGPT conversation in the sidebar`},archiveError:{id:`chatgptConversations.sidebar.archiveError`,defaultMessage:`Failed to archive conversation`,description:`Archive error`}};",
 	"var uBr=e=>true,lBr=e=>true;var yBr=class{async list({}){let l=await this.request.listConversations();return{...l,items:l.items?.filter(uBr)??[]}}async getBatch(e,t){return(await this.request.getConversationsBatch(e,t)).filter(uBr)}async listPinnedConversationItems(){return(await this.request.listPinnedItems({itemType:`conversation`})).filter(lBr)}async listProjectConversations({cursor:e=null,limit:t=5,ownedOnly:n=!0,projectId:r}){let i=await this.request.listProjectConversations({cursor:e,limit:t,ownedOnly:n,projectId:r});return{cursor:i.cursor,items:i.items?.filter(uBr)??[]}}};",
-	"/* function KDa( */;/* safeDelete(`/conversation/id/{conversation_id}`, */",
+	"/* function y0(e,t){ */;/* function KDa( */;/* safeDelete(`/conversation/id/{conversation_id}`, */",
 	"function VBc(e){let t=(0,w5.c)(83),{conversation:n,isActive:o,isArchivePending:w,route:p,title:v}=e,E=Fo(Q),D=Vd(),O=AC();let oe=async()=>{if(n==null||w)return[];let e=await FRc(E,{conversationId:n.id,projectId:PW(n)});return[{id:`rename-chatgpt-conversation`,message:OW.rename,onSelect:re},...e,{id:`archive-chatgpt-conversation`,message:OW.archive,onSelect:ae}]};return oe}",
 ].join("");
 
@@ -207,6 +207,44 @@ test("runtime calls upstream delete without body and updates active navigation",
 	};
 	const listed = await client.list({});
 	assert.deepEqual(listed.items, [{ id: "conversation-456" }]);
+});
+
+test("active deletion uses upstream new-chat state handler", async () => {
+	const patched = applyConversationDeletePatch(SIDEBAR_FIXTURE);
+	const deleteToken = {};
+	const started = [];
+	const context = {
+		KDa() {},
+		y0(scope) {
+			started.push(scope);
+		},
+		OW: {
+			deleteConfirm: { defaultMessage: "Delete {title}?" },
+			deleteError: { defaultMessage: "Delete failed" },
+		},
+		yv: {},
+		zN: deleteToken,
+		window: { confirm: () => true },
+	};
+	const scope = {
+		queryClient: {},
+		get(token) {
+			assert.equal(token, deleteToken);
+			return { delete: () => Promise.resolve() };
+		},
+	};
+
+	vm.runInNewContext(
+		`${patched};globalThis.deleteChat= ${RUNTIME_MARKER};`,
+		context,
+	);
+	await context.deleteChat(scope, { id: "conversation-123" }, "Example chat", false, true, {
+		formatMessage: (message) => message.defaultMessage,
+	}, () => {
+		throw new Error("fallback navigator should not run");
+	});
+
+	assert.deepEqual(started, [scope]);
 });
 
 test("project conversation refetch filters deleted tombstone", async () => {
