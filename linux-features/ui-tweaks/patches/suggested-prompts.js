@@ -33,7 +33,7 @@ function appPageEligibilityPattern() {
 }
 
 function mainEligibilityPattern() {
-  return /return\{enabled:([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.account\),staleTimeMs:\1\.([A-Za-z_$][\w$]*)\(\3\.account\)\}/gu;
+  return /let\{ambientSuggestionsStaleTimeMs:([A-Za-z_$][\w$]*)\}=([A-Za-z_$][\w$]*)\(\);if\(!([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\|\|\1==null\)return\{enabled:!1\};let\{account:([A-Za-z_$][\w$]*)\}=await ([A-Za-z_$][\w$]*)\.getAccount\(\);return ([A-Za-z_$][\w$]*)\(\5\)\?\{enabled:!0,staleTimeMs:\1\}:\{enabled:!1\}/gu;
 }
 
 function settingsEligibilityPattern() {
@@ -153,8 +153,17 @@ function applySuggestedPromptsMainPatch(source) {
 
     return source.replace(
       mainEligibilityPattern(),
-      (_match, namespace, enabledMethod, accountName, staleMethod) =>
-        `return{enabled:(${namespace}.${enabledMethod}(${accountName}.account),function ${MAIN_ELIGIBILITY_MARKER}(){return!0}()),staleTimeMs:${namespace}.${staleMethod}(${accountName}.account)}`,
+      (
+        _match,
+        staleTimeName,
+        featureStateName,
+        settingsEligibilityName,
+        settingsStoreName,
+        accountName,
+        appServerConnectionName,
+        accountEligibilityName,
+      ) =>
+        `let{ambientSuggestionsStaleTimeMs:${staleTimeName}}=${featureStateName}();if(!${settingsEligibilityName}(${settingsStoreName})||${staleTimeName}==null)return{enabled:!1};let{account:${accountName}}=await ${appServerConnectionName}.getAccount();return(${accountEligibilityName}(${accountName}),function ${MAIN_ELIGIBILITY_MARKER}(){return!0}())?{enabled:!0,staleTimeMs:${staleTimeName}}:{enabled:!1}`,
     );
   } catch (error) {
     console.warn(
