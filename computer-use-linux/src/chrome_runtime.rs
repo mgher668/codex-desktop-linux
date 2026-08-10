@@ -6,12 +6,14 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, VecDeque},
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     os::unix::{
-        ffi::OsStrExt,
+        ffi::{OsStrExt, OsStringExt},
         fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
         process::CommandExt,
     },
@@ -1611,22 +1613,38 @@ fn start_app_server(
     ))
 }
 
-fn app_server_child_path(node_path: &Path) -> RuntimeResult<std::ffi::OsString> {
+fn app_server_child_path(node_path: &Path) -> RuntimeResult<OsString> {
     let node_dir = node_path
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .ok_or_else(|| RuntimeError::internal("Validated Node path has no parent directory"))?;
-    let ambient_path = env::var_os("PATH");
-    let paths = std::iter::once(node_dir.to_path_buf()).chain(
-        ambient_path
-            .as_deref()
-            .map(env::split_paths)
-            .into_iter()
-            .flatten(),
-    );
+    let search_path = env::var_os("PATH").unwrap_or_else(default_executable_search_path);
+    let paths = std::iter::once(node_dir.to_path_buf()).chain(env::split_paths(&search_path));
     env::join_paths(paths).map_err(|error| {
         RuntimeError::internal(format!("Failed to construct app-server PATH: {error}"))
     })
+}
+
+fn default_executable_search_path() -> OsString {
+    let length = unsafe { libc::confstr(libc::_CS_PATH, std::ptr::null_mut(), 0) };
+    if length == 0 {
+        return OsString::from("/bin:/usr/bin");
+    }
+    let mut buffer = vec![0_u8; length];
+    let written = unsafe {
+        libc::confstr(
+            libc::_CS_PATH,
+            buffer.as_mut_ptr().cast::<libc::c_char>(),
+            buffer.len(),
+        )
+    };
+    if written == 0 {
+        return OsString::from("/bin:/usr/bin");
+    }
+    if buffer.last() == Some(&0) {
+        buffer.pop();
+    }
+    OsString::from_vec(buffer)
 }
 
 fn stop_managed_process(process: &mut ManagedProcess) {
@@ -2983,6 +3001,14 @@ mod tests {
     }
 
     #[test]
+    fn app_server_child_path_rejects_an_unjoinable_node_parent() {
+        let error = app_server_child_path(Path::new("/tmp/managed:node/node")).unwrap_err();
+        assert!(error
+            .message
+            .starts_with("Failed to construct app-server PATH:"));
+    }
+
+    #[test]
     fn executable_validation_rejects_a_group_writable_parent() {
         let root = test_root("group-writable-parent");
         let unsafe_parent = root.join("shared");
@@ -3339,11 +3365,14 @@ while True:
 import os
 import signal
 import socket
+import subprocess
 import sys
 import time
 
 with open(os.environ["CODEX_TEST_PATH_RECORD"], "w", encoding="utf-8") as record:
     record.write(os.environ.get("PATH", "<missing>"))
+if os.environ.get("CODEX_TEST_REQUIRE_DEFAULT_COMMAND") == "1":
+    subprocess.run(["sh", "-c", "true"], check=True)
 listen = sys.argv[sys.argv.index("--listen") + 1]
 socket_path = listen.removeprefix("unix://")
 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -3365,12 +3394,19 @@ while True:
         const CASE: &str = "CODEX_TEST_NPM_SHEBANG_CASE";
         const ROOT: &str = "CODEX_TEST_NPM_SHEBANG_ROOT";
         const PYTHON: &str = "CODEX_TEST_NPM_SHEBANG_PYTHON";
+        const RUNTIME_ROOT: &str = "CODEX_TEST_NPM_SHEBANG_RUNTIME_ROOT";
+        const REQUIRE_DEFAULT_COMMAND: &str = "CODEX_TEST_REQUIRE_DEFAULT_COMMAND";
 
         if env::var_os(CHILD).is_none() {
             let python = test_executable("python3");
-            for case in ["present", "absent"] {
+            for case in ["present", "absent", "empty"] {
                 let root = test_root(&format!("npm-shebang-trusted-node-{case}"));
                 let ambient_dir = root.join("ambient-bin");
+                let runtime_root = PathBuf::from("/tmp").join(format!(
+                    "cdx-npm-{}-{}",
+                    std::process::id(),
+                    random_hex(4).unwrap()
+                ));
                 fs::create_dir_all(&ambient_dir).unwrap();
                 fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
                 fs::set_permissions(&ambient_dir, fs::Permissions::from_mode(0o700)).unwrap();
@@ -3383,14 +3419,25 @@ while True:
                     .env(CASE, case)
                     .env(ROOT, &root)
                     .env(PYTHON, &python)
-                    .env("CODEX_TEST_PATH_RECORD", root.join("child-path.txt"));
-                if case == "present" {
-                    command.env("PATH", &ambient_dir);
-                } else {
-                    command.env_remove("PATH");
+                    .env(RUNTIME_ROOT, &runtime_root)
+                    .env("CODEX_TEST_PATH_RECORD", root.join("child-path.txt"))
+                    .env_remove(REQUIRE_DEFAULT_COMMAND);
+                match case {
+                    "present" => {
+                        command.env("PATH", &ambient_dir);
+                    }
+                    "absent" => {
+                        command.env_remove("PATH");
+                        command.env(REQUIRE_DEFAULT_COMMAND, "1");
+                    }
+                    "empty" => {
+                        command.env("PATH", "");
+                    }
+                    _ => unreachable!(),
                 }
                 let output = command.output().unwrap();
                 let _ = fs::remove_dir_all(&root);
+                let _ = fs::remove_dir_all(&runtime_root);
                 assert!(
                     output.status.success(),
                     "npm shebang subprocess ({case}) failed\nstdout:\n{}\nstderr:\n{}",
@@ -3403,6 +3450,7 @@ while True:
 
         let root = PathBuf::from(env::var_os(ROOT).unwrap());
         let python = PathBuf::from(env::var_os(PYTHON).unwrap());
+        let runtime_root = PathBuf::from(env::var_os(RUNTIME_ROOT).unwrap());
         let (fake_cli, node) = fake_npm_socket_app_server(&root, &python);
         let path_record = root.join("child-path.txt");
         let ambient_path = env::var_os("PATH");
@@ -3416,14 +3464,13 @@ while True:
         entry.paths.codex_cli_path = fs::canonicalize(fake_cli).unwrap();
         entry.paths.codex_home = root.clone();
         entry.paths.node_path = fs::canonicalize(node).unwrap();
-        let runtime_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join(format!(
-                "cdx-npm-shebang-{}-{}",
-                std::process::id(),
-                random_hex(4).unwrap()
-            ));
+        let expected_socket_path =
+            runtime_root.join(format!("a-{}.sock", short_hash(b"sidepanel-npm-shebang")));
+        assert!(
+            unix_socket_path_fits(&expected_socket_path),
+            "npm shebang fixture socket path is too long: {}",
+            expected_socket_path.display()
+        );
 
         let process = start_app_server(
             &entry,
@@ -3441,26 +3488,32 @@ while True:
                 panic!("npm shebang app-server failed: {error:?}");
             }
         };
-        let expected_path = env::join_paths(
-            std::iter::once(entry.paths.node_path.parent().unwrap().to_path_buf()).chain(
-                ambient_path
-                    .as_deref()
-                    .map(env::split_paths)
-                    .into_iter()
-                    .flatten(),
-            ),
-        )
-        .unwrap();
         let recorded_path = fs::read(path_record).unwrap();
+        let recorded_paths =
+            env::split_paths(std::ffi::OsStr::from_bytes(&recorded_path)).collect::<Vec<_>>();
+        let expected_node_dir = entry.paths.node_path.parent().unwrap().to_path_buf();
 
-        stop_managed_process(&mut process);
-        fs::remove_dir_all(runtime_root).unwrap();
         assert_eq!(
-            recorded_path,
-            expected_path.as_os_str().as_bytes(),
+            recorded_paths.first(),
+            Some(&expected_node_dir),
             "{} ambient PATH case",
             env::var(CASE).unwrap()
         );
+        match env::var(CASE).unwrap().as_str() {
+            "present" => {
+                assert_eq!(recorded_paths[1..], [PathBuf::from(ambient_path.unwrap())])
+            }
+            "absent" => assert!(recorded_paths.len() > 1),
+            "empty" => assert_eq!(recorded_paths[1..], [PathBuf::new()]),
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            fs::metadata(&runtime_root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        stop_managed_process(&mut process);
+        fs::remove_dir_all(runtime_root).unwrap();
     }
 
     #[test]
