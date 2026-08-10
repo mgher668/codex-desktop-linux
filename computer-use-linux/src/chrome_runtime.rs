@@ -3297,14 +3297,14 @@ mod tests {
             .unwrap_or_else(|| panic!("could not resolve test executable from PATH: {name}"))
     }
 
-    fn fake_path_dependent_python_launcher(root: &Path, python: &Path) -> PathBuf {
+    fn fake_basename_sensitive_python_launcher(root: &Path, python: &Path) -> PathBuf {
         fs::create_dir_all(root).unwrap();
         fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
-        std::os::unix::fs::symlink(python, root.join("selected-python")).unwrap();
+        std::os::unix::fs::symlink(python, root.join("native-python")).unwrap();
         let launcher = root.join("python3");
         fs::write(
             &launcher,
-            "#!/usr/bin/env bash\nexec \"${0%/*}/selected-python\" \"$@\"\n",
+            "#!/usr/bin/env bash\nname=\"${0##*/}\"\nif [[ \"$name\" != \"python3\" ]]; then\n  echo \"pyenv: $name: command not found\" >&2\n  exit 127\nfi\nexec \"${0%/*}/native-python\" \"$@\"\n",
         )
         .unwrap();
         fs::set_permissions(&launcher, fs::Permissions::from_mode(0o700)).unwrap();
@@ -3445,14 +3445,14 @@ while True:
         const REQUIRE_DEFAULT_COMMAND: &str = "CODEX_TEST_REQUIRE_DEFAULT_COMMAND";
 
         if env::var_os(CHILD).is_none() {
-            let python_launcher_root = test_root("npm-shebang-python-launcher");
-            let python_launcher = fake_path_dependent_python_launcher(
-                &python_launcher_root,
-                &test_executable("python3"),
-            );
-            let python = resolve_test_python_interpreter(&python_launcher);
-            fs::remove_dir_all(&python_launcher_root).unwrap();
-            assert!(!python.starts_with(&python_launcher_root));
+            let native_python = resolve_test_python_interpreter(&test_executable("python3"));
+            let basename_sensitive_root = test_root("npm-shebang-basename-sensitive-python");
+            let basename_sensitive_python =
+                fake_basename_sensitive_python_launcher(&basename_sensitive_root, &native_python);
+            let python = resolve_test_python_interpreter(&basename_sensitive_python);
+            fs::remove_dir_all(&basename_sensitive_root).unwrap();
+            assert_eq!(python, native_python);
+            assert!(!python.starts_with(&basename_sensitive_root));
             for case in ["present", "absent", "empty"] {
                 let root = test_root(&format!("npm-shebang-trusted-node-{case}"));
                 let ambient_dir = root.join("ambient-bin");
