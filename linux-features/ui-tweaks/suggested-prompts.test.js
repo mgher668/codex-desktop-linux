@@ -174,6 +174,8 @@ test("main patch rejects incomplete, duplicate, and mixed contracts byte-identic
     current + current,
     patched + patched,
     current + patched,
+    `${current}function ${MAIN_ELIGIBILITY_MARKER}(){return!0}`,
+    `${patched}function ${MAIN_ELIGIBILITY_MARKER}(){return!0}`,
   ];
 
   for (const source of sources) {

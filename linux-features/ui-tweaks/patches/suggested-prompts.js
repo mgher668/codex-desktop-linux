@@ -113,12 +113,13 @@ function suggestedPromptsMainContract(source) {
   if (typeof source !== "string") {
     return "drifted";
   }
+  const markerMatches = source.split(MAIN_ELIGIBILITY_MARKER).length - 1;
   const cleanMatches = matchCount(source, mainEligibilityPattern());
   const patchedMatches = matchCount(source, patchedMainEligibilityPattern());
-  if (cleanMatches === 1 && patchedMatches === 0) {
+  if (markerMatches === 0 && cleanMatches === 1 && patchedMatches === 0) {
     return "current";
   }
-  if (cleanMatches === 0 && patchedMatches === 1) {
+  if (markerMatches === 1 && cleanMatches === 0 && patchedMatches === 1) {
     return "patched";
   }
   return "drifted";
