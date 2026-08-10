@@ -1,0 +1,118 @@
+const CHATGPT_SIDEBAR_ASSET_PATTERN = /^app-initial-[^.]+\.js$/;
+const RUNTIME_MARKER = "codexLinuxDeleteChatGptConversation";
+const DELETED_IDS = "codexLinuxDeletedChatGptConversationIds";
+const DELETE_MENU_ID = "delete-chatgpt-conversation";
+
+const ARCHIVE_MESSAGE =
+	"archive:{id:`chatgptConversations.sidebar.archive`,defaultMessage:`Archive chat`,description:`Action label to archive a ChatGPT conversation in the sidebar`}";
+const DELETE_MESSAGES =
+	"delete:{id:`codexLinuxConversationDelete.delete`,defaultMessage:`Delete chat`,description:`Action label to permanently delete a ChatGPT conversation in the sidebar`},deleteConfirm:{id:`codexLinuxConversationDelete.confirm`,defaultMessage:`Delete “{title}”? This can't be undone.`,description:`Confirmation message shown before permanently deleting a ChatGPT conversation`},deleteError:{id:`codexLinuxConversationDelete.error`,defaultMessage:`Failed to delete conversation`,description:`Error shown when permanently deleting a ChatGPT conversation fails`},";
+const LOCALIZATION_NEEDLE = `${ARCHIVE_MESSAGE},archiveError:`;
+const LOCALIZATION_REPLACEMENT = `${ARCHIVE_MESSAGE},${DELETE_MESSAGES}archiveError:`;
+const SIDEBAR_MENU_NEEDLE =
+	"{id:`archive-chatgpt-conversation`,message:OW.archive,onSelect:ae}]}";
+const SIDEBAR_MENU_REPLACEMENT = `{id:\`archive-chatgpt-conversation\`,message:OW.archive,onSelect:ae},{id:\`${DELETE_MENU_ID}\`,message:OW.delete,onSelect:()=>${RUNTIME_MARKER}(E,n,v,w,o,p,D,O)}]}`;
+const SIDEBAR_COMPONENT_NEEDLE = "function VBc(e){let t=(0,w5.c)(83),";
+const CACHE_EVICTION_NEEDLE = "function KDa(";
+const DELETE_API_NEEDLE = "safeDelete(`/conversation/id/{conversation_id}`,";
+const LIST_FILTER_NEEDLE = "return{...l,items:l.items?.filter(uBr)??[]}";
+const BATCH_FILTER_NEEDLE =
+	"async getBatch(e,t){return(await this.request.getConversationsBatch(e,t)).filter(uBr)}";
+const PINNED_FILTER_NEEDLE =
+	"async listPinnedConversationItems(){return(await this.request.listPinnedItems({itemType:`conversation`})).filter(lBr)}";
+const LIST_FILTER_REPLACEMENT = `return{...l,items:l.items?.filter(e=>!${DELETED_IDS}.has(e?.id)&&uBr(e))??[]}`;
+const BATCH_FILTER_REPLACEMENT = `async getBatch(e,t){return(await this.request.getConversationsBatch(e,t)).filter(uBr).filter(e=>!${DELETED_IDS}.has(e?.id))}`;
+const PINNED_FILTER_REPLACEMENT =
+	"async listPinnedConversationItems(){return(await this.request.listPinnedItems({itemType:`conversation`})).filter(lBr).filter(e=>!" +
+	`${DELETED_IDS}.has(e.item?.id))}`;
+const RUNTIME_SOURCE = `const ${DELETED_IDS}=new Set;function ${RUNTIME_MARKER}(e,t,n,r,i,a,o,s){if(t==null||r)return;if(typeof window==="undefined"||typeof window.confirm!=="function"||!window.confirm(o.formatMessage(OW.deleteConfirm,{title:n})))return;e.get(zN).delete(t.id).then(()=>{${DELETED_IDS}.add(t.id),KDa(e.queryClient,t.id),i&&typeof s==="function"&&s(a)}).catch(()=>{e.get(yv).danger(o.formatMessage(OW.deleteError))})}`;
+
+function warn(message) {
+	console.warn(`WARN: ${message} - skipping conversation delete feature patch`);
+}
+
+function countOccurrences(source, needle) {
+	return source.split(needle).length - 1;
+}
+
+function applyConversationDeletePatch(source) {
+	try {
+		if (typeof source !== "string") {
+			warn("Asset source is not a string");
+			return source;
+		}
+
+		if (source.includes(RUNTIME_MARKER)) {
+			return source;
+		}
+
+		const markers = [
+			["ChatGPT sidebar localization markers", LOCALIZATION_NEEDLE],
+			["ChatGPT sidebar conversation row", SIDEBAR_COMPONENT_NEEDLE],
+			["ChatGPT conversation cache helper", CACHE_EVICTION_NEEDLE],
+			["ChatGPT conversation delete API client", DELETE_API_NEEDLE],
+			["ChatGPT conversation list response filter", LIST_FILTER_NEEDLE],
+			["ChatGPT conversation batch response filter", BATCH_FILTER_NEEDLE],
+			["ChatGPT pinned conversation response filter", PINNED_FILTER_NEEDLE],
+			["ChatGPT sidebar archive menu item", SIDEBAR_MENU_NEEDLE],
+		];
+		const missing = markers.filter(
+			([, needle]) => countOccurrences(source, needle) !== 1,
+		);
+		if (missing.length > 0) {
+			warn(
+				`Could not find unique current ${missing.map(([label]) => label).join(", ")}`,
+			);
+			return source;
+		}
+
+		let patched = source.replace(LOCALIZATION_NEEDLE, LOCALIZATION_REPLACEMENT);
+		patched = patched.replace(LIST_FILTER_NEEDLE, LIST_FILTER_REPLACEMENT);
+		patched = patched.replace(BATCH_FILTER_NEEDLE, BATCH_FILTER_REPLACEMENT);
+		patched = patched.replace(PINNED_FILTER_NEEDLE, PINNED_FILTER_REPLACEMENT);
+		patched = patched.replace(
+			SIDEBAR_COMPONENT_NEEDLE,
+			`${RUNTIME_SOURCE}${SIDEBAR_COMPONENT_NEEDLE}`,
+		);
+		patched = patched.replace(SIDEBAR_MENU_NEEDLE, SIDEBAR_MENU_REPLACEMENT);
+
+		if (
+			!patched.includes(RUNTIME_MARKER) ||
+			!patched.includes(`${DELETED_IDS}.add(t.id)`) ||
+			!patched.includes(LIST_FILTER_REPLACEMENT) ||
+			!patched.includes(`id:\`${DELETE_MENU_ID}\``) ||
+			!patched.includes("message:OW.delete")
+		) {
+			warn("Could not verify delete menu injection");
+			return source;
+		}
+
+		return patched;
+	} catch (error) {
+		warn(
+			`Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+		);
+		return source;
+	}
+}
+
+const descriptors = [
+	{
+		id: "chatgpt-sidebar-delete",
+		phase: "webview-asset",
+		order: 20_910,
+		ciPolicy: "optional",
+		pattern: CHATGPT_SIDEBAR_ASSET_PATTERN,
+		missingDescription: "ChatGPT sidebar webview bundle",
+		skipDescription: "ChatGPT sidebar conversation delete feature patch",
+		apply: applyConversationDeletePatch,
+	},
+];
+
+module.exports = {
+	CHATGPT_SIDEBAR_ASSET_PATTERN,
+	DELETE_MENU_ID,
+	RUNTIME_MARKER,
+	applyConversationDeletePatch,
+	descriptors,
+};
