@@ -1,7 +1,7 @@
 const CHATGPT_SIDEBAR_ASSET_PATTERN = /^app-initial-[^.]+\.js$/;
 const RUNTIME_MARKER = "codexLinuxDeleteChatGptConversation";
 const DELETED_IDS = "codexLinuxDeletedChatGptConversationIds";
-const NEW_THREAD_ROUTE = "/new-thread";
+const NEW_THREAD_ROUTE = "/";
 const DELETE_MENU_ID = "delete-chatgpt-conversation";
 
 const ARCHIVE_MESSAGE =
