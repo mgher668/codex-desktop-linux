@@ -228,11 +228,13 @@ let
       listen = "unix:///run/user/1000/codex-custom.sock";
     };
   };
-  remoteControlInvalidListenConfig = remoteControlConfig // {
-    remoteControl = remoteControlConfig.remoteControl // {
-      listen = "ws://127.0.0.1:8765";
-    };
-  };
+  remoteControlInvalidListenConfigs = map (
+    listen:
+    remoteControlConfig
+    // {
+      remoteControl = remoteControlConfig.remoteControl // { inherit listen; };
+    }
+  ) [ "ws://127.0.0.1:8765" "unix:///" "unix:////run/user/1000/codex.sock" ];
   homeRemoteConfig = (evalHomeManager remoteControlConfig).config;
   nixosRemoteConfig = (evalNixOS remoteControlConfig).config;
   homeRemoteLauncherAutostartConfig =
@@ -241,10 +243,12 @@ let
     (evalNixOS remoteControlLauncherAutostartConfig).config;
   homeRemoteCustomSocketConfig = (evalHomeManager remoteControlCustomSocketConfig).config;
   nixosRemoteCustomSocketConfig = (evalNixOS remoteControlCustomSocketConfig).config;
-  homeRemoteInvalidListenAssertions =
-    (evalHomeManager remoteControlInvalidListenConfig).config.assertions;
-  nixosRemoteInvalidListenAssertions =
-    (evalNixOS remoteControlInvalidListenConfig).config.assertions;
+  homeRemoteInvalidListenAssertions = map (
+    config: (evalHomeManager config).config.assertions
+  ) remoteControlInvalidListenConfigs;
+  nixosRemoteInvalidListenAssertions = map (
+    config: (evalNixOS config).config.assertions
+  ) remoteControlInvalidListenConfigs;
   homeRemoteService = homeRemoteConfig.systemd.user.services.codex-remote-control;
   nixosRemoteService = nixosRemoteConfig.systemd.user.services.codex-remote-control;
   optionalHomeRemoteService =
@@ -434,11 +438,11 @@ assert lib.assertMsg
   (nixosRemoteConfig.environment.sessionVariables.CODEX_REMOTE_CONTROL_APP_SERVER_MODE == "proxy")
   "NixOS did not route Desktop RPCs to the declarative Remote Control owner";
 assert lib.assertMsg
-  (lib.any (item: !item.assertion) homeRemoteInvalidListenAssertions)
-  "Home Manager accepted a non-Unix Remote Control owner that Desktop cannot proxy to";
+  (lib.all (assertions: lib.any (item: !item.assertion) assertions) homeRemoteInvalidListenAssertions)
+  "Home Manager accepted an invalid Remote Control owner socket";
 assert lib.assertMsg
-  (lib.any (item: !item.assertion) nixosRemoteInvalidListenAssertions)
-  "NixOS accepted a non-Unix Remote Control owner that Desktop cannot proxy to";
+  (lib.all (assertions: lib.any (item: !item.assertion) assertions) nixosRemoteInvalidListenAssertions)
+  "NixOS accepted an invalid Remote Control owner socket";
 assert lib.assertMsg
   (
     homeRemoteConfig.home.sessionVariables.CODEX_REMOTE_CONTROL_APP_SERVER_PROXY_SOCKET

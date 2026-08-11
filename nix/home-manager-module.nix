@@ -66,7 +66,8 @@ let
   codexHome =
     if remoteCfg.codexHome != null then remoteCfg.codexHome else "${config.home.homeDirectory}/.codex";
   remoteControlListenIsUnixSocket =
-    remoteCfg.listen == "unix://" || lib.hasPrefix "unix:///" remoteCfg.listen;
+    remoteCfg.listen == "unix://"
+    || builtins.match "unix:///[^/].*" remoteCfg.listen != null;
   remoteControlProxySocket =
     if remoteCfg.listen == "unix://" then
       "${codexHome}/app-server-control/app-server-control.sock"

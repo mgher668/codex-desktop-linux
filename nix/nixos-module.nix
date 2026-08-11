@@ -69,7 +69,8 @@ let
   remoteControlCodexHome =
     if remoteCfg.codexHome != null then remoteCfg.codexHome else "%h/.codex";
   remoteControlListenIsUnixSocket =
-    remoteCfg.listen == "unix://" || lib.hasPrefix "unix:///" remoteCfg.listen;
+    remoteCfg.listen == "unix://"
+    || builtins.match "unix:///[^/].*" remoteCfg.listen != null;
   remoteControlProxySocket =
     if remoteCfg.listen == "unix://" then
       "${remoteControlCodexHome}/app-server-control/app-server-control.sock"
