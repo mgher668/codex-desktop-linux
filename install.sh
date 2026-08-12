@@ -14,7 +14,7 @@ if [ "$CODEX_APP_ID" != "codex-desktop" ]; then
 fi
 INSTALL_DIR="${CODEX_INSTALL_DIR:-$INSTALL_ROOT/$DEFAULT_INSTALL_DIR_NAME}"
 WORK_DIR="$(mktemp -d)"
-ARCH="$(uname -m)"
+ARCH="${CODEX_TARGET_ARCH:-$(uname -m)}"
 ICON_SOURCE="$SCRIPT_DIR/assets/codex-linux.png"
 
 . "$SCRIPT_DIR/scripts/lib/install-helpers.sh"
