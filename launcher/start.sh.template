@@ -192,7 +192,7 @@ case "${1:-}" in
 esac
 [ -x "$CHATGPT_BINARY" ] || { printf 'ChatGPT executable is missing: %s\n' "$CHATGPT_BINARY" >&2; exit 1; }
 
-ELECTRON_ARGS=()
+ELECTRON_ARGS=("--class=$CODEX_LINUX_APP_ID")
 load_environment_hooks
 refresh_legacy_bundled_plugin_caches
 load_user_electron_args
