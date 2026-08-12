@@ -20,6 +20,13 @@ assert_file nix/upstream-linux-packages.json
 bash -n install.sh launcher/start.sh.template scripts/rebuild-candidate.sh
 bash -n scripts/lib/*.sh scripts/build-deb.sh scripts/build-rpm.sh scripts/build-pacman.sh scripts/build-appimage.sh
 
+assert_contains packaging/linux/codex-desktop.desktop '^Name=ChatGPT Community$'
+assert_contains packaging/linux/codex-desktop.desktop '^Comment=Community Linux distribution based on OpenAI ChatGPT$'
+assert_contains install.sh 'CODEX_APP_DISPLAY_NAME:-ChatGPT Community'
+assert_contains install.sh 'cp .*ICON_SOURCE.*CODEX_APP_ID'
+assert_contains install.sh 'cp .*ICON_SOURCE.*resources/icon-chatgpt.png'
+assert_contains scripts/lib/package-common.sh 'PACKAGE_DISPLAY_NAME:-ChatGPT Community'
+assert_contains scripts/build-appimage.sh 'PACKAGE_DISPLAY_NAME:-ChatGPT Community'
 assert_contains install.sh 'upstream-linux-package.sh'
 assert_contains install.sh 'CODEX_TARGET_ARCH'
 assert_contains launcher/start.sh.template '/ChatGPT'

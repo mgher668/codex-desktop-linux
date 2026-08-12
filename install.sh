@@ -6,7 +6,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CODEX_APP_ID="${CODEX_APP_ID:-codex-desktop}"
-CODEX_APP_DISPLAY_NAME="${CODEX_APP_DISPLAY_NAME:-ChatGPT}"
+CODEX_APP_DISPLAY_NAME="${CODEX_APP_DISPLAY_NAME:-ChatGPT Community}"
 INSTALL_ROOT="${CODEX_INSTALL_ROOT:-$SCRIPT_DIR}"
 DEFAULT_INSTALL_DIR_NAME="codex-app"
 if [ "$CODEX_APP_ID" != "codex-desktop" ]; then
@@ -89,11 +89,13 @@ create_start_script() {
         -e "s/__CODEX_LINUX_APP_DISPLAY_NAME__/$CODEX_APP_DISPLAY_NAME/g" \
         "$SCRIPT_DIR/launcher/start.sh.template" > "$INSTALL_DIR/start.sh"
     chmod 0755 "$INSTALL_DIR/start.sh"
+}
+
+stage_community_branding() {
     mkdir -p "$INSTALL_DIR/.codex-linux"
-    local icon_source="$INSTALL_DIR/resources/icon-chatgpt.png"
-    [ -f "$icon_source" ] || icon_source="$ICON_SOURCE"
-    if [ -f "$icon_source" ]; then
-        cp "$icon_source" "$INSTALL_DIR/.codex-linux/$CODEX_APP_ID.png"
+    if [ -f "$ICON_SOURCE" ]; then
+        cp "$ICON_SOURCE" "$INSTALL_DIR/.codex-linux/$CODEX_APP_ID.png"
+        cp "$ICON_SOURCE" "$INSTALL_DIR/resources/icon-chatgpt.png"
     fi
 }
 
@@ -125,6 +127,7 @@ build_from_upstream_package() {
         "$INSTALL_DIR/resources/app.asar"
     run_linux_feature_stage_hooks "$UPSTREAM_APP_DIR"
     create_start_script
+    stage_community_branding
 
     if [ -n "${CODEX_PATCH_REPORT_RESOLVED:-}" ] && [ -f "$CODEX_PATCH_REPORT_RESOLVED" ]; then
         cp "$CODEX_PATCH_REPORT_RESOLVED" "$INSTALL_DIR/.codex-linux/patch-report.json"

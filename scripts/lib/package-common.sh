@@ -246,8 +246,8 @@ render_desktop_entry() {
     local rendered_target="$target.tmp"
 
     package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
-    display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-ChatGPT}")"
-    comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Run ChatGPT Desktop on Linux}")"
+    display_name="$(sed_escape_replacement "${PACKAGE_DISPLAY_NAME:-ChatGPT Community}")"
+    comment="$(sed_escape_replacement "${PACKAGE_COMMENT:-Community Linux distribution based on OpenAI ChatGPT}")"
 
     awk \
         -v package_name="$package_name" \
@@ -306,32 +306,6 @@ resolve_package_icon_source() {
     if [ -n "${PACKAGE_ICON_SOURCE:-}" ]; then
         printf '%s\n' "$PACKAGE_ICON_SOURCE"
         return 0
-    fi
-
-    local expected_icon="$APP_DIR/.codex-linux/$PACKAGE_NAME.png"
-    if [ -f "$expected_icon" ]; then
-        printf '%s\n' "$expected_icon"
-        return 0
-    fi
-
-    local icon_dir="$APP_DIR/.codex-linux"
-    local -a candidates=()
-    local candidate
-    if [ -d "$icon_dir" ]; then
-        while IFS= read -r -d '' candidate; do
-            candidates+=("$candidate")
-        done < <(
-            find "$icon_dir" -maxdepth 1 -type f -name '*.png' -print0 |
-                sort -z
-        )
-    fi
-    if [ "${#candidates[@]}" -eq 1 ]; then
-        printf '%s\n' "${candidates[0]}"
-        return 0
-    fi
-
-    if [ "${#candidates[@]}" -gt 1 ]; then
-        warn "Multiple generated app icons found in $icon_dir; using the bundled Linux icon"
     fi
     printf '%s\n' "$REPO_DIR/assets/codex-linux.png"
 }
@@ -834,6 +808,7 @@ stage_common_package_files() {
     cp -aT "$APP_DIR" "$app_root"
     mkdir -p "$app_root/.codex-linux"
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
+    cp "$ICON_SOURCE" "$app_root/resources/icon-chatgpt.png"
     render_desktop_entry_doctor_helper "$app_root/.codex-linux/codex-desktop-entry-doctor.sh"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"

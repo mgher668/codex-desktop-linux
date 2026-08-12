@@ -64,8 +64,9 @@ console-only boot must have its existing display manager enabled before the
 desktop launcher can be tested. The validated system used LightDM automatic
 login with the Raspberry Pi Labwc session.
 
-After installation, start **ChatGPT** from the desktop menu. The official ARM64
-package already contains the matching Codex CLI and platform runtime.
+After installation, start **ChatGPT Community** from the desktop menu. The
+official ARM64 package already contains the matching Codex CLI and platform
+runtime.
 
 ## Validation results
 

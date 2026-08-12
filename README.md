@@ -5,6 +5,10 @@ Linux ChatGPT desktop application. It verifies and repackages the signed
 official Linux payload, adds an optional-feature framework, and provides native
 packages, AppImage, Nix, and transactional updates.
 
+The custom build appears in application menus as **ChatGPT Community** and uses
+an icon marked with a blue `C`, while its package and executable identity remain
+`codex-desktop`.
+
 The project preserves the complete upstream runtime instead of reconstructing
 the application. With no optional
 ASAR features enabled, the official `resources/app.asar` is copied byte-for-byte.
