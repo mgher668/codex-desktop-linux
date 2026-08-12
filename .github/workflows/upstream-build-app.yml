@@ -251,7 +251,15 @@ jobs:
             icon-codex-dark-color.png \
             icon-codex-light.png \
             sync-desktop-icon.sh | sort) \
-            <(find "$payload" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
+            <(find "$payload" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+          for resource in \
+            icon-chatgpt.png \
+            icon-codex-dark-color.png \
+            icon-codex-light.png \
+            sync-desktop-icon.sh; do
+            test -f "$payload/$resource"
+            test ! -L "$payload/$resource"
+          done
           upstream_root="$(mktemp -d)"
           dpkg-deb -x "$package" "$upstream_root"
           cmp "$upstream_root/usr/lib/chatgpt/resources/icon-chatgpt.png" "$payload/icon-chatgpt.png"

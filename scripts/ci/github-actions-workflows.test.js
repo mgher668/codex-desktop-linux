@@ -57,8 +57,30 @@ test("official Linux validation runs fully on every pull request but not hourly"
     /--require-applied feature:ui-tweaks:appearance-dock-icon-settings-row/,
   );
   assert.match(dockFeatureAlone, /Expected Dock descriptors 2\/2 applied/);
-  assert.match(dockFeatureAlone, /resources\/dock-icon/);
+  assert.match(dockFeatureAlone, /scripts\/lib\/upstream-linux-package\.js/);
+  assert.match(
+    dockFeatureAlone,
+    /--key-base64 assets\/openai-codex-linux-repository-key\.gpg\.base64/,
+  );
+  assert.match(dockFeatureAlone, /\.\/install\.sh "\$package"/);
+  assert.match(
+    dockFeatureAlone,
+    /find "\$payload" -mindepth 1 -maxdepth 1 -printf '%f\\n'/,
+  );
+  assert.doesNotMatch(dockFeatureAlone, /find "\$payload"[^\n]+-type f/);
+  assert.match(dockFeatureAlone, /test ! -L "\$payload\/\$resource"/);
+  for (const sourceComparison of [
+    /cmp "\$upstream_root\/usr\/lib\/chatgpt\/resources\/icon-chatgpt\.png" "\$payload\/icon-chatgpt\.png"/,
+    /cmp assets\/codex-linux\.png "\$payload\/icon-codex-dark-color\.png"/,
+    /cmp assets\/codex-linux\.png "\$payload\/icon-codex-light\.png"/,
+    /cmp linux-features\/ui-tweaks\/sync-desktop-icon\.sh "\$payload\/sync-desktop-icon\.sh"/,
+    /cmp linux-features\/ui-tweaks\/sync-desktop-icon\.sh "\$hook"/,
+  ]) {
+    assert.match(dockFeatureAlone, sourceComparison);
+  }
+  assert.match(dockFeatureAlone, /test -x "\$payload\/sync-desktop-icon\.sh"/);
   assert.match(dockFeatureAlone, /ui-tweaks-dock-icon-cleanup\.sh/);
+  assert.match(dockFeatureAlone, /test -x "\$hook"/);
 });
 
 test("official Linux metadata expires after seven days", () => {
