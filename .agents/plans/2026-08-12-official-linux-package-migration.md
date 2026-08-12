@@ -29,7 +29,7 @@ may be backfilled by the next milestone commit).
 | 3 | Core patch retirement and feature retargeting | complete | 784 Node tests: 783 pass, 1 skipped; empty core registry; retired/unknown-ID policy | `e26e494d` |
 | 4 | Signed-package updater and state migration | complete | 48 Rust tests; Clippy; signed metadata-only probe; updater-enabled deb payload | `47f6d69d` |
 | 5 | Nix and signed-package CI/watchdog | complete | flake evaluation + Nix package check; signed full amd64/arm64 package verification; cross-arch clean ASAR equality | `eaf34e8e` |
-| 6 | Documentation and final repository cleanup | complete | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all`; forbidden-reference scan; `git diff --check` | pending commit |
+| 6 | Documentation and final repository cleanup | complete | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all`; forbidden-reference scan; `git diff --check` | `916a8337` |
 
 ## Build, package, updater, CI, and documentation checklist
 
@@ -250,9 +250,9 @@ or new feature must also keep its adjacent README and feature-local tests.
 | 2026-08-12 | Signed package pins | production watchdog plus full package verification for `amd64` and `arm64` | both packages are 26.803.81509 and match signed `Packages`; corrected arm64 pin to `f38fcc194eca…accbc1` | `eaf34e8e` |
 | 2026-08-12 | Nix | clean `nixos/nix` container: parse, `nix flake check --no-build`, and `.#checks.x86_64-linux.official-linux-package` | evaluation and real pinned-package derivation pass | `eaf34e8e` |
 | 2026-08-12 | Cross-architecture baseline | `CODEX_TARGET_ARCH=arm64 ./install.sh chatgpt_26.803.81509_arm64.deb` | aarch64 ELF staged and output ASAR is byte-identical to official package | `eaf34e8e` |
-| 2026-08-12 | Broad Node suite | tracked `*.test.js` files under Node 24 | 795 tests: 794 pass, 1 skipped, 0 fail | pending commit |
-| 2026-08-12 | Rust updater | `cargo test -p codex-update-manager -q`; `cargo clippy -p codex-update-manager --all-targets -- -D warnings` | 48/48 tests pass; Clippy clean | pending commit |
-| 2026-08-12 | Package matrix | clean-container `.deb`, RPM, pacman and full Nix build | all four package payloads built successfully from official 26.803.81509; upstream `app.asar` retained | pending commit |
-| 2026-08-12 | Dependency bootstrap | `CI_SKIP_PULL=1 ./scripts/ci-local.sh install-deps` | Ubuntu 22.04, Ubuntu 24.04 and Debian 12 pass with Node 24.19.0 | pending commit |
-| 2026-08-12 | Final matrix | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all` | exit 0; core 777 tests (776 pass, 1 skip), deb/RPM/pacman/Nix, dependency matrix and signed upstream build all pass | pending commit |
-| 2026-08-12 | Final source audit | forbidden-reference `rg`, shell/JS/JSON syntax, feature README inventory, `git diff --check` | no active legacy-source/runtime paths outside intentional rejection tests and migration history; all static checks pass | pending commit |
+| 2026-08-12 | Broad Node suite | tracked `*.test.js` files under Node 24 | 795 tests: 794 pass, 1 skipped, 0 fail | `916a8337` |
+| 2026-08-12 | Rust updater | `cargo test -p codex-update-manager -q`; `cargo clippy -p codex-update-manager --all-targets -- -D warnings` | 48/48 tests pass; Clippy clean | `916a8337` |
+| 2026-08-12 | Package matrix | clean-container `.deb`, RPM, pacman and full Nix build | all four package payloads built successfully from official 26.803.81509; upstream `app.asar` retained | `916a8337` |
+| 2026-08-12 | Dependency bootstrap | `CI_SKIP_PULL=1 ./scripts/ci-local.sh install-deps` | Ubuntu 22.04, Ubuntu 24.04 and Debian 12 pass with Node 24.19.0 | `916a8337` |
+| 2026-08-12 | Final matrix | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all` | exit 0; core 777 tests (776 pass, 1 skip), deb/RPM/pacman/Nix, dependency matrix and signed upstream build all pass | `916a8337` |
+| 2026-08-12 | Final source audit | forbidden-reference `rg`, shell/JS/JSON syntax, feature README inventory, `git diff --check` | no active legacy-source/runtime paths outside intentional rejection tests and migration history; all static checks pass | `916a8337` |
