@@ -89,6 +89,14 @@ main() {
         -e "s/__VERSION__/$PACKAGE_VERSION/g" \
         -e "s/__ARCH__/$arch/g" \
         "$CONTROL_TEMPLATE" > "$PKG_ROOT/DEBIAN/control"
+    if package_with_updater_enabled; then
+        replace_literal_file_token \
+            "$PKG_ROOT/DEBIAN/control" \
+            "__UPDATER_DEPENDENCIES__" \
+            "curl, dpkg, gnupg, nodejs, pkexec | policykit-1, polkitd | policykit-1, "
+    else
+        replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPDATER_DEPENDENCIES__" ""
+    fi
     local feature_dependency_suffix
     if ! feature_dependency_suffix="$(
         linux_feature_package_dependency_suffix deb "$PKG_ROOT/opt/$PACKAGE_NAME"
@@ -100,12 +108,6 @@ main() {
         ", __LINUX_FEATURE_DEPENDENCIES__" \
         "$feature_dependency_suffix"
     if ! package_with_updater_enabled; then
-        sed -i \
-            -e 's/pkexec | policykit-1, //g' \
-            -e 's/polkitd | policykit-1, //g' \
-            -e '/Local auto-updates rebuild a Linux package/d' \
-            -e '/use the bundled managed Node.js runtime plus the local packaging toolchain/d' \
-            "$PKG_ROOT/DEBIAN/control"
         cat >> "$PKG_ROOT/DEBIAN/control" <<'CONTROL'
  This package was built without codex-update-manager. Update manually from a trusted checkout.
 CONTROL
@@ -123,6 +125,7 @@ CONTROL
         write_no_updater_deb_postinst "$PKG_ROOT/DEBIAN/postinst"
         write_no_updater_deb_prerm "$PKG_ROOT/DEBIAN/prerm"
     fi
+    append_deb_apparmor_postinst "$PKG_ROOT/DEBIAN/postinst"
 
     mkdir -p "$DIST_DIR"
     info "Building $output_file"

@@ -92,10 +92,11 @@ main() {
 	else
 		info "Building package without codex-update-manager (PACKAGE_WITH_UPDATER=0)"
 	fi
-	command -v makepkg >/dev/null 2>&1 || error "makepkg is required (part of pacman)"
-
-	if [ "$(id -u)" -eq 0 ]; then
-		error "makepkg cannot run as root. Run this script as a regular user."
+	if [ "${PACMAN_STAGE_ONLY:-0}" != "1" ]; then
+		command -v makepkg >/dev/null 2>&1 || error "makepkg is required (part of pacman)"
+		if [ "$(id -u)" -eq 0 ]; then
+			error "makepkg cannot run as root. Run this script as a regular user."
+		fi
 	fi
 
 	ensure_updater_binary
@@ -150,6 +151,10 @@ main() {
 	if ! package_with_updater_enabled; then
 		sed -i \
 			-e "/'polkit'/d" \
+			-e "/'curl'/d" \
+			-e "/'dpkg'/d" \
+			-e "/'gnupg'/d" \
+			-e "/'nodejs'/d" \
 			"$build_root/PKGBUILD"
 	fi
 	local feature_dependency_lines=""
@@ -174,6 +179,16 @@ main() {
 			"$INSTALL_HOOKS" >"$build_root/${PACKAGE_NAME}.install"
 	else
 		write_no_updater_pacman_install_hooks "$build_root/${PACKAGE_NAME}.install"
+	fi
+
+	if [ "${PACMAN_STAGE_ONLY:-0}" = "1" ]; then
+		mkdir -p "$DIST_DIR/pacman-stage"
+		cp -a "$staging_root/." "$DIST_DIR/pacman-stage/"
+		cp "$build_root/PKGBUILD" "$DIST_DIR/pacman-stage.PKGBUILD"
+		cp "$build_root/${PACKAGE_NAME}.install" "$DIST_DIR/pacman-stage.install"
+		info "Pacman staging complete: $DIST_DIR/pacman-stage"
+		printf '%s\n' "$DIST_DIR/pacman-stage"
+		return 0
 	fi
 
 	mkdir -p "$DIST_DIR"

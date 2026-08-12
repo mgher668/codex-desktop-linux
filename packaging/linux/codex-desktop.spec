@@ -12,9 +12,9 @@ ExclusiveArch:  __ARCH__
 %endif
 
 %if __PACKAGE_WITH_UPDATER__
-Requires:       python3, /usr/bin/7z, polkit, curl, unzip, xdg-utils, gcc-c++, make
+Requires:       polkit, curl, dpkg, gnupg2, nodejs, xdg-utils
 %else
-Requires:       python3, /usr/bin/7z, curl, unzip, xdg-utils, gcc-c++, make
+Requires:       xdg-utils
 %endif
 Requires:       libasound.so.2%{codex_elf_suffix}, libatk-bridge-2.0.so.0%{codex_elf_suffix}
 Requires:       libatk-1.0.so.0%{codex_elf_suffix}, libglib-2.0.so.0%{codex_elf_suffix}, libgtk-3.so.0%{codex_elf_suffix}
@@ -26,11 +26,10 @@ Requires:       libXrandr.so.2%{codex_elf_suffix}, libgbm.so.1%{codex_elf_suffix
 Recommends:     zenity, kdialog
 
 %description
-Community-built Linux package for ChatGPT Desktop generated from the macOS DMG.
-Requires the Codex CLI to be available in PATH or CODEX_CLI_PATH.
+Custom codex-desktop distribution built from OpenAI's signed official Linux package.
+The official runtime, native modules, Codex CLI, rg, and code-mode host are bundled.
 %if __PACKAGE_WITH_UPDATER__
-Local auto-updates rebuild a Linux package from the upstream Codex.dmg and therefore
-use the bundled managed Node.js runtime plus the local packaging toolchain listed in Requires.
+Local updates verify OpenAI's signed APT metadata and rebuild from the indexed Linux package.
 %else
 This package was built without codex-update-manager. Update manually from a trusted checkout.
 %endif
@@ -43,6 +42,7 @@ cp -a "__RPM_STAGING_DIR__/." "%{buildroot}/"
 %files
 %defattr(-,root,root,-)
 /opt/__PACKAGE_NAME__/
+/etc/apparmor.d/__PACKAGE_NAME__
 /usr/bin/__PACKAGE_NAME__
 %if __PACKAGE_WITH_UPDATER__
 /usr/bin/codex-update-manager
@@ -58,6 +58,10 @@ __LINUX_FEATURE_FILES__
 %post
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+fi
+if command -v aa-enabled >/dev/null 2>&1 && command -v apparmor_parser >/dev/null 2>&1 &&
+   aa-enabled --quiet && [ -f /etc/apparmor.d/__PACKAGE_NAME__ ]; then
+    apparmor_parser -r -W -T /etc/apparmor.d/__PACKAGE_NAME__ >/dev/null 2>&1 || true
 fi
 DESKTOP_ENTRY_DOCTOR=/opt/__PACKAGE_NAME__/.codex-linux/codex-desktop-entry-doctor.sh
 if [ -f "$DESKTOP_ENTRY_DOCTOR" ]; then

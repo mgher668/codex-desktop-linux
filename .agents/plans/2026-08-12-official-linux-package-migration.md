@@ -24,8 +24,8 @@ may be backfilled by the next milestone commit).
 | # | Milestone | Status | Tests / evidence | Commit SHA |
 |---|---|---|---|---|
 | 0 | Branch and exhaustive tracking record | complete | clean `main` at `4da3436f`; 86-ID official-ASAR probe and 34 manifests inventoried | `ea59dbc9` |
-| 1 | Signed Linux-package source and extraction pipeline | complete | source-security tests; local official-package build; ASAR SHA equality | pending commit |
-| 2 | Compact launcher and cross-format package payload | in progress | compact launcher implemented and `--diagnose` checked; package formats pending | — |
+| 1 | Signed Linux-package source and extraction pipeline | complete | source-security tests; local official-package build; ASAR SHA equality | `33e2c03d` |
+| 2 | Compact launcher and cross-format package payload | complete | launcher tests; amd64 deb/RPM builds; pacman/AppImage stage inspection | pending commit |
 | 3 | Core patch retirement and feature retargeting | pending | one-feature builds; retired/unknown-ID tests | — |
 | 4 | Signed-package updater and state migration | pending | updater release/download/promotion/rollback suite | — |
 | 5 | Nix and signed-package CI/watchdog | pending | Nix evaluation; both architecture workflows | — |
@@ -56,10 +56,10 @@ may be backfilled by the next milestone commit).
 - [x] Keep declarative env/prelaunch/electronArgs/launcher/coldStart/afterExit hooks.
 - [x] Pass URI/CLI arguments through unchanged; wait only for after-exit hooks.
 - [x] Remove custom single-instance/warm-start/webview/process supervision.
-- [ ] Preserve `codex-desktop` identity and `/opt/codex-desktop` layout.
-- [ ] Retarget AppArmor to `/opt/codex-desktop/ChatGPT` for system packages.
-- [ ] Do not automatically add `--no-sandbox` to AppImage.
-- [ ] Align dependency mappings for deb/RPM/pacman and inspect every payload.
+- [x] Preserve `codex-desktop` identity and `/opt/codex-desktop` layout.
+- [x] Retarget AppArmor to `/opt/codex-desktop/ChatGPT` for system packages.
+- [x] Do not automatically add `--no-sandbox` to AppImage.
+- [x] Align dependency mappings for deb/RPM/pacman and inspect every payload.
 
 ### Updater
 
@@ -241,3 +241,5 @@ or new feature must also keep its adjacent README and feature-local tests.
 | 2026-08-12 | Baseline inventory | official 26.803.81509 ASAR patch probe | 17 upstream-applied, 64 applied, 5 disabled; 86 total | pre-migration |
 | 2026-08-12 | Source security | `node --test scripts/lib/upstream-linux-package.test.js` | 4/4 pass: valid/tampered/wrong-key signature, release/package hashes and metadata | pending commit |
 | 2026-08-12 | Clean baseline | local official `chatgpt_26.803.81509_amd64.deb` with empty feature config | upstream/output ASAR SHA `87a32f5d…ff9ff66`; launcher diagnose passes; schema v2 emitted | pending commit |
+| 2026-08-12 | Launcher | `node --test launcher/start.test.js` | 2/2 pass: hook composition, exact argument forwarding, diagnose | pending commit |
+| 2026-08-12 | Package payload | updater-disabled amd64 builders | deb and RPM built/inspected; AppImage and pacman staged/inspected; official `codex` retained, duplicate CLI absent, AppArmor path correct | pending commit |

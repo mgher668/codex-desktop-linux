@@ -22,7 +22,9 @@ ensure_file_exists() {
 ensure_app_layout() {
     [ -d "$APP_DIR" ] || error "Missing app directory: $APP_DIR. Run ./install.sh first."
     [ -x "$APP_DIR/start.sh" ] || error "Missing launcher: $APP_DIR/start.sh"
-    [ -f "$APP_DIR/content/webview/index.html" ] || error "Missing webview entrypoint: $APP_DIR/content/webview/index.html. Run ./install.sh first."
+    [ -x "$APP_DIR/ChatGPT" ] || error "Missing official ChatGPT runtime: $APP_DIR/ChatGPT. Run ./install.sh first."
+    [ -f "$APP_DIR/resources/app.asar" ] || error "Missing official app.asar: $APP_DIR/resources/app.asar. Run ./install.sh first."
+    [ -x "$APP_DIR/resources/codex" ] || error "Missing bundled Codex CLI: $APP_DIR/resources/codex. Run ./install.sh first."
 }
 
 sed_escape_replacement() {
@@ -44,12 +46,6 @@ package_with_updater_enabled() {
 }
 
 package_node_binary() {
-    local managed_node="${APP_DIR:-}/resources/node-runtime/bin/node"
-    if [ -x "$managed_node" ] && [ "$("$managed_node" -e 'process.stdout.write("ok")' 2>/dev/null || true)" = "ok" ]; then
-        printf '%s\n' "$managed_node"
-        return 0
-    fi
-
     command -v node >/dev/null 2>&1 || error "node is required"
     command -v node
 }
@@ -481,6 +477,23 @@ SCRIPT
     chmod 0755 "$target"
 }
 
+append_deb_apparmor_postinst() {
+    local target="$1"
+    local package_name
+    package_name="$(sed_escape_replacement "$PACKAGE_NAME")"
+    sed -i '/^exit 0$/d' "$target"
+    cat >> "$target" <<SCRIPT
+
+if command -v aa-enabled >/dev/null 2>&1 &&
+   command -v apparmor_parser >/dev/null 2>&1 &&
+   aa-enabled --quiet && [ -f "/etc/apparmor.d/$package_name" ]; then
+    apparmor_parser -r -W -T "/etc/apparmor.d/$package_name" >/dev/null 2>&1 || true
+fi
+
+exit 0
+SCRIPT
+}
+
 write_no_updater_deb_prerm() {
     local target="$1"
     local package_name
@@ -803,7 +816,8 @@ stage_common_package_files() {
         "$root/opt" \
         "$root/usr/bin" \
         "$root/usr/share/applications" \
-        "$root/usr/share/icons/hicolor/256x256/apps"
+        "$root/usr/share/icons/hicolor/256x256/apps" \
+        "$root/etc/apparmor.d"
     if package_with_updater_enabled; then
         mkdir -p \
             "$root/usr/lib/systemd/user" \
@@ -814,10 +828,10 @@ stage_common_package_files() {
     cp -aT "$APP_DIR" "$app_root"
     mkdir -p "$app_root/.codex-linux"
     cp "$ICON_SOURCE" "$app_root/.codex-linux/$PACKAGE_NAME.png"
-    cp "$REPO_DIR/launcher/cli-launch-path.py" "$app_root/.codex-linux/cli-launch-path.py"
     render_desktop_entry_doctor_helper "$app_root/.codex-linux/codex-desktop-entry-doctor.sh"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
+    render_apparmor_profile "$root/etc/apparmor.d/$PACKAGE_NAME"
     if package_with_updater_enabled; then
         cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-update-manager"
         chmod 0755 "$root/usr/bin/codex-update-manager"
@@ -830,6 +844,20 @@ stage_common_package_files() {
             "$app_root/.codex-linux/codex-no-updater-transition-cleanup.sh"
     fi
     render_packaged_runtime_helper "$app_root/.codex-linux/codex-packaged-runtime.sh"
+}
+
+render_apparmor_profile() {
+    local target="$1"
+    cat > "$target" <<PROFILE
+abi <abi/4.0>,
+include <tunables/global>
+
+profile $PACKAGE_NAME "/opt/$PACKAGE_NAME/ChatGPT" flags=(unconfined) {
+  userns,
+  include if exists <local/$PACKAGE_NAME>
+}
+PROFILE
+    chmod 0644 "$target"
 }
 
 stage_update_builder_bundle() {
