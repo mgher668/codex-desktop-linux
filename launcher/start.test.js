@@ -49,6 +49,7 @@ test("launcher composes declarative hooks and forwards arguments", (t) => {
     env: {
       ...process.env,
       CODEX_HOME: path.join(root, "codex-home"),
+      XDG_CONFIG_HOME: path.join(root, "config"),
       TEST_ROOT: root,
     },
     encoding: "utf8",
@@ -70,10 +71,87 @@ test("launcher composes declarative hooks and forwards arguments", (t) => {
   assert.equal(fs.readFileSync(path.join(root, "after-exit"), "utf8"), "after-exit");
 });
 
+test("launcher loads global and app-specific Electron flags", (t) => {
+  const root = createApp(t);
+  const configHome = path.join(root, "config");
+  fs.mkdirSync(path.join(configHome, "codex-desktop"), { recursive: true });
+  fs.writeFileSync(
+    path.join(configHome, "electron-flags.conf"),
+    "# Shared Electron flags\n  --ozone-platform=wayland  \r\n\n",
+  );
+  fs.writeFileSync(
+    path.join(configHome, "codex-desktop", "electron-flags.conf"),
+    "  # Community-only flags\n--enable-features=WaylandWindowDecorations\n",
+  );
+  writeExecutable(
+    path.join(root, ".codex-linux", "launcher.d", "capture-args.sh"),
+    "#!/bin/bash\nprintf '%s\\n' \"$@\" > \"$TEST_ROOT/launcher-hook-arguments\"\n",
+  );
+
+  const result = childProcess.spawnSync(
+    path.join(root, "start.sh"),
+    ["--ozone-platform=x11", "codex://thread/123"],
+    {
+      env: {
+        ...process.env,
+        CODEX_HOME: path.join(root, "codex-home"),
+        XDG_CONFIG_HOME: configHome,
+        TEST_ROOT: root,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  assert.equal(result.status, 7);
+  assert.deepEqual(fs.readFileSync(path.join(root, "arguments"), "utf8").trim().split("\n"), [
+    "--ozone-platform=wayland",
+    "--enable-features=WaylandWindowDecorations",
+    "--ozone-platform=x11",
+    "codex://thread/123",
+  ]);
+  assert.deepEqual(
+    fs.readFileSync(path.join(root, "launcher-hook-arguments"), "utf8").trim().split("\n"),
+    [
+      "--ozone-platform=wayland",
+      "--enable-features=WaylandWindowDecorations",
+      "--ozone-platform=x11",
+      "codex://thread/123",
+    ],
+  );
+});
+
+test("launcher uses the HOME config fallback and ignores non-file flag paths", (t) => {
+  const root = createApp(t);
+  const home = path.join(root, "home");
+  const configHome = path.join(home, ".config");
+  fs.mkdirSync(path.join(configHome, "electron-flags.conf"), { recursive: true });
+  fs.mkdirSync(path.join(configHome, "codex-desktop"), { recursive: true });
+  fs.writeFileSync(
+    path.join(configHome, "codex-desktop", "electron-flags.conf"),
+    "--ozone-platform=wayland\n",
+  );
+  const env = {
+    ...process.env,
+    CODEX_HOME: path.join(root, "codex-home"),
+    HOME: home,
+    TEST_ROOT: root,
+  };
+  delete env.XDG_CONFIG_HOME;
+
+  const result = childProcess.spawnSync(path.join(root, "start.sh"), [], {
+    env,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 7);
+  assert.equal(result.stderr, "");
+  assert.equal(fs.readFileSync(path.join(root, "arguments"), "utf8"), "--ozone-platform=wayland\n");
+});
+
 test("diagnose validates the official runtime without starting it", (t) => {
   const root = createApp(t);
   const result = childProcess.spawnSync(path.join(root, "start.sh"), ["--diagnose"], {
-    env: { ...process.env, TEST_ROOT: root }, encoding: "utf8",
+    env: { ...process.env, XDG_CONFIG_HOME: path.join(root, "config"), TEST_ROOT: root }, encoding: "utf8",
   });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /ok: .*\/ChatGPT/);
@@ -161,7 +239,12 @@ test("launcher replaces only matching retired Browser and Chrome plugin caches",
   fs.chmodSync(pluginAppserver, 0o775);
 
   const result = childProcess.spawnSync(path.join(root, "start.sh"), [], {
-    env: { ...process.env, CODEX_HOME: codexHome, TEST_ROOT: root },
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      XDG_CONFIG_HOME: path.join(root, "config"),
+      TEST_ROOT: root,
+    },
     encoding: "utf8",
   });
   assert.equal(result.status, 7);

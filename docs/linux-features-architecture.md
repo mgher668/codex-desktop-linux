@@ -158,9 +158,11 @@ a feature removes framework-owned files on the next rebuild.
 - `coldStart`: background hook at launch.
 - `afterExit`: requires the wrapper to wait, then runs after process exit.
 
-Hooks receive the original launcher arguments and feature/app directory
-environment. Keep them bounded; the compact launcher does not supervise helper
-processes or provide a second application lifecycle.
+Launcher hooks receive the Electron arguments already loaded from user and
+feature configuration followed by the original launcher arguments. Other
+executable hooks receive the original arguments. All hooks receive the
+feature/app directory environment. Keep them bounded; the compact launcher
+does not supervise helper processes or provide a second application lifecycle.
 
 ## Native package extensions
 

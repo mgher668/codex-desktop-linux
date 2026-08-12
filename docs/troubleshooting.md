@@ -37,6 +37,29 @@ Do not start the underlying `ChatGPT` binary directly for normal use. The
 `codex-desktop` wrapper supplies the correct desktop identity and enabled
 feature hooks.
 
+## Persistent Electron flags and native Wayland
+
+The launcher reads shared Electron flags from
+`${XDG_CONFIG_HOME:-$HOME/.config}/electron-flags.conf` and Community-specific
+flags from
+`${XDG_CONFIG_HOME:-$HOME/.config}/codex-desktop/electron-flags.conf`, in that
+order. Put one complete argument on each line; blank lines and lines beginning
+with `#` are ignored. App-specific flags are followed by enabled feature flags
+and explicit command-line arguments, so a later explicit argument can override
+an earlier setting.
+
+To force native Wayland rendering without editing a generated desktop entry:
+
+```bash
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-desktop"
+printf '%s\n' '--ozone-platform=wayland' > \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/codex-desktop/electron-flags.conf"
+```
+
+Restart every running official and Community process after changing the file.
+The launcher does not evaluate shell quoting or split a line into multiple
+arguments.
+
 ## Chromium sandbox or AppArmor
 
 Prefer a native package, which installs an AppArmor profile adapted to

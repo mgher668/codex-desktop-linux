@@ -133,6 +133,31 @@ load_electron_args() {
     done < <(find "$HOOK_ROOT/electron-args.d" -maxdepth 1 -type f -print0 | sort -z)
 }
 
+load_user_electron_args_file() {
+    local file="$1"
+    local line
+    local leading_space
+    local trailing_space
+
+    [ -f "$file" ] && [ -r "$file" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        leading_space="${line%%[![:space:]]*}"
+        line="${line#"$leading_space"}"
+        trailing_space="${line##*[![:space:]]}"
+        line="${line%"$trailing_space"}"
+        case "$line" in ""|\#*) continue ;; esac
+        ELECTRON_ARGS+=("$line")
+    done < "$file"
+}
+
+load_user_electron_args() {
+    local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+    load_user_electron_args_file "$config_home/electron-flags.conf"
+    load_user_electron_args_file "$config_home/$CODEX_LINUX_APP_ID/electron-flags.conf"
+}
+
 run_launcher_hooks() {
     local hook
     local output
@@ -141,7 +166,7 @@ run_launcher_hooks() {
     local name
     [ -d "$HOOK_ROOT/launcher.d" ] || return 0
     while IFS= read -r -d '' hook; do
-        output="$(CODEX_LINUX_FEATURE_HOOK_PHASE=launcher "$hook" "${ORIGINAL_ARGS[@]}")"
+        output="$(CODEX_LINUX_FEATURE_HOOK_PHASE=launcher "$hook" "$@")"
         while IFS=' ' read -r kind payload; do
             [ -n "${kind:-}" ] || continue
             case "$kind" in
@@ -170,9 +195,10 @@ esac
 ELECTRON_ARGS=()
 load_environment_hooks
 refresh_legacy_bundled_plugin_caches
+load_user_electron_args
 load_electron_args
 run_hook_directory "$HOOK_ROOT/prelaunch.d" prelaunch
-run_launcher_hooks
+run_launcher_hooks "${ELECTRON_ARGS[@]}" "${ORIGINAL_ARGS[@]}"
 
 if [ -f "$HOOK_ROOT/codex-packaged-runtime.sh" ]; then
     # shellcheck disable=SC1091
