@@ -40,10 +40,15 @@ managed_icon_is_owned() {
 acquire_app_lock() {
     mkdir -p "$applications_dir"
     exec 9< "$applications_dir"
-    if ! flock 9; then
+    if ! flock -w 5 9; then
         echo "WARN: Could not lock Dock icon launcher state: $applications_dir" >&2
         exit 0
     fi
+}
+
+release_app_lock() {
+    flock -u 9 || true
+    exec 9<&-
 }
 
 cleanup_owned_icon_orphans() {
@@ -122,6 +127,7 @@ cleanup_managed_desktop() {
         return 0
     fi
     cleanup_owned_icon_orphans
+    release_app_lock
     refresh_desktop_database
 }
 
@@ -291,4 +297,5 @@ if [ -n "$previous_icon" ] && [ "$previous_icon" != "$icon_target" ] && managed_
     rm -f -- "$previous_icon" || true
 fi
 cleanup_owned_icon_orphans "$icon_target"
+release_app_lock
 [ "$changed" -eq 0 ] || refresh_desktop_database

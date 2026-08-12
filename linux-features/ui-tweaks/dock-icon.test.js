@@ -689,7 +689,7 @@ test("content-addressed icons recover interrupted sync and cleanup states", () =
   }
 });
 
-test("desktop synchronization serializes the per-app launcher transaction", async () => {
+test("desktop synchronization serializes the per-app launcher transaction with a timeout", async () => {
   const fixture = createDesktopSyncFixture();
   const applicationsDir = path.join(fixture.dataHome, "applications");
   let holder;
@@ -718,6 +718,20 @@ test("desktop synchronization serializes the per-app launcher transaction", asyn
     });
     assert.equal(sync.exitCode, 0);
     assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), "first-icon");
+
+    holder = childProcess.spawn("flock", [applicationsDir, "bash", "-c", "printf locked; sleep 7"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    await new Promise((resolve, reject) => {
+      holder.stdout.once("data", resolve);
+      holder.once("error", reject);
+    });
+    const started = Date.now();
+    const timedOut = runDesktopSync("codex-dark", fixture.secondIcon, fixture.env);
+    assert.equal(timedOut.status, 0, timedOut.stderr);
+    assert.match(timedOut.stderr, /Could not lock Dock icon launcher state/);
+    assert.ok(Date.now() - started >= 4500);
+    assert.ok(Date.now() - started < 6500);
   } finally {
     holder?.kill();
     sync?.kill();

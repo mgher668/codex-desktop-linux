@@ -49,7 +49,7 @@
         ];
         runtimeLibraryPath = lib.makeLibraryPath runtimeLibraries;
         runtimePath = lib.makeBinPath (with pkgs; [
-          bash coreutils findutils gnugrep gnused nodejs python3 systemd xdg-utils
+          bash coreutils findutils gnugrep gnused nodejs python3 systemd util-linux xdg-utils
         ]);
         emptyFeaturesConfig = pkgs.writeText "empty-features.json" ''{"enabled":[]}'';
 
