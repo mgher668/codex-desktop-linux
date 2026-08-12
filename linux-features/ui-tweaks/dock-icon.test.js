@@ -663,7 +663,64 @@ test("content-addressed icons recover interrupted sync and cleanup states", () =
     assert.equal(resumedCleanup.status, 0, resumedCleanup.stderr);
     assert.equal(fs.existsSync(fixture.managedDesktop), false);
     assert.equal(fs.existsSync(icon), false);
+
+    const orphanChatgpt = fixture.managedIcon("chatgpt");
+    const orphanCodex = fixture.managedIcon("codex-dark");
+    fs.writeFileSync(orphanChatgpt, "first-icon");
+    fs.writeFileSync(orphanCodex, "second-icon");
+    const recoveredOrphans = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
+    assert.equal(recoveredOrphans.status, 0, recoveredOrphans.stderr);
+    assert.equal(fs.existsSync(orphanChatgpt), true);
+    assert.equal(fs.existsSync(orphanCodex), false);
+
+    const modifiedOrphan = fixture.managedIcon("codex-light", "codex-desktop", "owned-before-edit");
+    fs.writeFileSync(modifiedOrphan, "user-modified");
+    const preservedModifiedOrphan = runDesktopCleanup(appDir, fixture.env);
+    assert.equal(preservedModifiedOrphan.status, 0, preservedModifiedOrphan.stderr);
+    assert.equal(fs.readFileSync(modifiedOrphan, "utf8"), "user-modified");
+
+    fs.writeFileSync(orphanCodex, "second-icon");
+    const recoveredInitialOrphan = runDesktopCleanup(appDir, fixture.env);
+    assert.equal(recoveredInitialOrphan.status, 0, recoveredInitialOrphan.stderr);
+    assert.equal(fs.existsSync(orphanCodex), false);
+    assert.equal(fs.readFileSync(modifiedOrphan, "utf8"), "user-modified");
   } finally {
+    fs.rmSync(fixture.tempDir, { recursive: true, force: true });
+  }
+});
+
+test("desktop synchronization serializes the per-app launcher transaction", async () => {
+  const fixture = createDesktopSyncFixture();
+  const applicationsDir = path.join(fixture.dataHome, "applications");
+  let holder;
+  let sync;
+  try {
+    fs.mkdirSync(applicationsDir, { recursive: true });
+    holder = childProcess.spawn("flock", [applicationsDir, "bash", "-c", "printf locked; sleep 1"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    await new Promise((resolve, reject) => {
+      holder.stdout.once("data", resolve);
+      holder.once("error", reject);
+    });
+    sync = childProcess.spawn(
+      "bash",
+      [path.join(__dirname, "sync-desktop-icon.sh"), "chatgpt"],
+      { env: fixture.env, stdio: ["pipe", "ignore", "pipe"] },
+    );
+    sync.stdin.end(fs.readFileSync(fixture.firstIcon));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(sync.exitCode, null);
+    await new Promise((resolve, reject) => {
+      sync.once("exit", resolve);
+      sync.once("error", reject);
+    });
+    assert.equal(sync.exitCode, 0);
+    assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), "first-icon");
+  } finally {
+    holder?.kill();
+    sync?.kill();
     fs.rmSync(fixture.tempDir, { recursive: true, force: true });
   }
 });

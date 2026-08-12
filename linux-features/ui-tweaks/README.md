@@ -68,7 +68,9 @@ The prelaunch hook removes only an unchanged managed override after the nested
 tweak is disabled. Desktop entries carry a full-content digest, while icon files
 use content-addressed names whose digest must match their bytes. Any user edit or
 pre-existing conflicting icon is preserved, and interrupted sync or cleanup can
-resume without a separate ownership sidecar.
+resume without a separate ownership sidecar. A per-app lock serializes runtime
+updates, and later runs remove only digest-verified orphan icons from the three
+feature-owned selection namespaces.
 
 This tweak is independently disabled by default:
 

@@ -37,6 +37,32 @@ managed_icon_is_owned() {
     [ "$actual_digest" = "$expected_digest" ]
 }
 
+acquire_app_lock() {
+    mkdir -p "$applications_dir"
+    exec 9< "$applications_dir"
+    if ! flock 9; then
+        echo "WARN: Could not lock Dock icon launcher state: $applications_dir" >&2
+        exit 0
+    fi
+}
+
+cleanup_owned_icon_orphans() {
+    local keep="${1:-}"
+    local icon
+    [ -d "$icons_dir" ] || return 0
+    while IFS= read -r -d '' icon; do
+        [ "$icon" = "$keep" ] && continue
+        managed_icon_is_owned "$icon" || continue
+        rm -f -- "$icon" || echo "WARN: Could not remove stale managed Dock icon resource: $icon" >&2
+    done < <(
+        find "$icons_dir" -maxdepth 1 -type f \
+            \( -name "$app_id-dock-chatgpt-*.png" \
+               -o -name "$app_id-dock-codex-dark-*.png" \
+               -o -name "$app_id-dock-codex-light-*.png" \) \
+            -print0
+    )
+}
+
 refresh_desktop_database() {
     if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
         command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null 2>&1 || true
@@ -77,7 +103,12 @@ managed_desktop_is_owned() {
 
 cleanup_managed_desktop() {
     local icon_value
-    managed_desktop_content_is_owned || return 0
+    if ! managed_desktop_content_is_owned; then
+        if [ ! -e "$desktop_target" ] && [ ! -L "$desktop_target" ]; then
+            cleanup_owned_icon_orphans
+        fi
+        return 0
+    fi
     icon_value="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
     if [ -e "$icon_value" ] || [ -L "$icon_value" ]; then
         managed_icon_is_owned "$icon_value" || return 0
@@ -90,6 +121,7 @@ cleanup_managed_desktop() {
         echo "WARN: Could not remove managed Dock icon desktop entry: $desktop_target" >&2
         return 0
     fi
+    cleanup_owned_icon_orphans
     refresh_desktop_database
 }
 
@@ -100,6 +132,7 @@ if [ "${CODEX_LINUX_FEATURE_HOOK_PHASE:-}" = "prelaunch" ]; then
     if [ -f "$payload_helper" ] && [ ! -L "$payload_helper" ]; then
         exit 0
     fi
+    acquire_app_lock
     cleanup_managed_desktop
     exit 0
 fi
@@ -109,6 +142,8 @@ case "$selection" in
     chatgpt|codex-dark|codex-light) ;;
     *) exit 0 ;;
 esac
+
+acquire_app_lock
 
 desktop_source_matches_identity() {
     local source="$1"
@@ -255,4 +290,5 @@ fi
 if [ -n "$previous_icon" ] && [ "$previous_icon" != "$icon_target" ] && managed_icon_is_owned "$previous_icon"; then
     rm -f -- "$previous_icon" || true
 fi
+cleanup_owned_icon_orphans "$icon_target"
 [ "$changed" -eq 0 ] || refresh_desktop_database
