@@ -68,6 +68,59 @@ load_environment_hooks() {
     done < <(find "$HOOK_ROOT/env.d" -maxdepth 1 -type f -print0 | sort -z)
 }
 
+refresh_legacy_bundled_plugin_cache() {
+    local plugin_id="$1"
+    local bundled_plugin="$CODEX_LINUX_APP_DIR/resources/plugins/openai-bundled/plugins/$plugin_id"
+    local bundled_manifest="$bundled_plugin/.codex-plugin/plugin.json"
+    local cache_root="${CODEX_HOME:-$HOME/.codex}/plugins/cache/openai-bundled/$plugin_id"
+    local cache_dir
+    local cache_manifest
+    local cache_client
+    local replacement
+    local backup
+
+    [ -f "$bundled_manifest" ] && [ -d "$cache_root" ] || return 0
+    while IFS= read -r -d '' cache_dir; do
+        cache_manifest="$cache_dir/.codex-plugin/plugin.json"
+        cache_client="$cache_dir/scripts/browser-client.mjs"
+        [ -f "$cache_manifest" ] && [ -f "$cache_client" ] && [ ! -L "$cache_client" ] || continue
+        cmp -s "$bundled_manifest" "$cache_manifest" || continue
+        grep -Eq 'codexLinuxPerUserBrowserSocketDir|codexLinuxIabSocketScope' "$cache_client" || continue
+
+        replacement="${cache_dir}.community-refresh.$$"
+        backup="${cache_dir}.community-legacy.$$"
+        if mkdir -m 0700 "$replacement" &&
+           cp -a --no-preserve=ownership "$bundled_plugin/." "$replacement/" &&
+           mv "$cache_dir" "$backup" &&
+           mv "$replacement" "$cache_dir"; then
+            if ! rm -rf -- "$backup"; then
+                printf 'warning: refreshed %s plugin but could not remove its legacy cache backup: %s\n' "$plugin_id" "$backup" >&2
+            fi
+            printf 'Refreshed legacy %s plugin cache from the official Linux payload: %s\n' "$plugin_id" "$cache_dir" >&2
+        else
+            if [ -d "$backup" ] && [ ! -e "$cache_dir" ]; then
+                if ! mv "$backup" "$cache_dir" 2>/dev/null; then
+                    printf 'warning: legacy %s plugin cache rollback requires manual recovery: %s\n' "$plugin_id" "$backup" >&2
+                fi
+            fi
+            rm -rf -- "$replacement" 2>/dev/null || true
+            printf 'warning: could not refresh legacy %s plugin cache: %s\n' "$plugin_id" "$cache_dir" >&2
+        fi
+    done < <(find "$cache_root" -mindepth 1 -maxdepth 1 -type d ! -name '*.community-refresh.*' ! -name '*.community-legacy.*' -print0)
+}
+
+refresh_legacy_bundled_plugin_caches() {
+    local plugin_appserver="${CODEX_HOME:-$HOME/.codex}/plugins/.plugin-appserver"
+
+    refresh_legacy_bundled_plugin_cache browser
+    refresh_legacy_bundled_plugin_cache chrome
+
+    if [ -d "$plugin_appserver" ] && [ ! -L "$plugin_appserver" ] && [ -O "$plugin_appserver" ]; then
+        chmod go-w "$plugin_appserver" 2>/dev/null ||
+            printf 'warning: could not secure the Chrome app-server runtime directory: %s\n' "$plugin_appserver" >&2
+    fi
+}
+
 load_electron_args() {
     local file
     local line
@@ -116,6 +169,7 @@ esac
 
 ELECTRON_ARGS=()
 load_environment_hooks
+refresh_legacy_bundled_plugin_caches
 load_electron_args
 run_hook_directory "$HOOK_ROOT/prelaunch.d" prelaunch
 run_launcher_hooks

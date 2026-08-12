@@ -39,6 +39,21 @@ before starting `codex-desktop`, and vice versa. Their packages and desktop
 entries can coexist, but upstream single-instance locking prevents reliable
 parallel sessions.
 
+## Browser or Chrome plugin is visible but cannot connect
+
+The first Community launch after migrating from the legacy pre-official build
+refreshes cached Browser and Chrome plugins only when their bundled manifests
+match the official Linux plugins and they contain a known retired Linux-port
+marker. This one-time migration replaces the old custom Chrome extension host
+and fixes the old `/tmp/codex-browser-use-<uid>` discovery path; the official
+Linux runtime uses `/tmp/codex-browser-use`. It also removes legacy group-write
+permission from the private `.plugin-appserver` runtime directory, which the
+Chrome host rejects as an untrusted parent path.
+
+If Browser was already loaded before that migration ran, fully exit every
+ChatGPT process and start **ChatGPT Community** again. Arbitrary plugin caches
+and user-authored plugins are never rewritten.
+
 ## A feature build fails after an upstream release
 
 Disable the feature in `linux-features/features.json` and rebuild to confirm the

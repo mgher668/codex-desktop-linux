@@ -19,7 +19,7 @@ function createApp(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const launcher = fs.readFileSync(templatePath, "utf8")
     .replaceAll("__CODEX_LINUX_APP_ID__", "codex-desktop")
-    .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "ChatGPT");
+    .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "ChatGPT Community");
   writeExecutable(path.join(root, "start.sh"), launcher);
   for (const relative of ["resources/app.asar", "resources/codex", "resources/rg", "resources/codex-code-mode-host"]) {
     const target = path.join(root, relative);
@@ -46,7 +46,12 @@ test("launcher composes declarative hooks and forwards arguments", (t) => {
   writeExecutable(path.join(hooks, "after-exit.d", "fixture.sh"), "#!/bin/bash\nprintf after-exit > \"$TEST_ROOT/after-exit\"\n");
 
   const result = childProcess.spawnSync(path.join(root, "start.sh"), ["codex://thread/123", "--new-window"], {
-    env: { ...process.env, TEST_ROOT: root }, encoding: "utf8",
+    env: {
+      ...process.env,
+      CODEX_HOME: path.join(root, "codex-home"),
+      TEST_ROOT: root,
+    },
+    encoding: "utf8",
   });
   assert.equal(result.status, 7);
   assert.deepEqual(fs.readFileSync(path.join(root, "environment"), "utf8").trim().split("\n"), [
@@ -73,4 +78,116 @@ test("diagnose validates the official runtime without starting it", (t) => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /ok: .*\/ChatGPT/);
   assert.equal(fs.existsSync(path.join(root, "arguments")), false);
+});
+
+test("launcher replaces only matching retired Browser and Chrome plugin caches", (t) => {
+  const root = createApp(t);
+  const codexHome = path.join(root, "codex-home");
+  const manifest = (pluginId) =>
+    `{"name":"${pluginId}","version":"26.803.81509"}\n`;
+  const matchingCaches = [];
+
+  for (const pluginId of ["browser", "chrome"]) {
+    const bundledPlugin = path.join(
+      root,
+      `resources/plugins/openai-bundled/plugins/${pluginId}`,
+    );
+    const matchingCache = path.join(
+      codexHome,
+      `plugins/cache/openai-bundled/${pluginId}/26.803.81509`,
+    );
+    const officialClient = `export const officialLinux${pluginId}Client = true;\n`;
+    const officialHost = `official ${pluginId} extension host\n`;
+    for (const pluginRoot of [bundledPlugin, matchingCache]) {
+      fs.mkdirSync(path.join(pluginRoot, ".codex-plugin"), { recursive: true });
+      fs.mkdirSync(path.join(pluginRoot, "scripts"), { recursive: true });
+      fs.mkdirSync(path.join(pluginRoot, "extension-host/linux/x64"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(pluginRoot, ".codex-plugin/plugin.json"),
+        manifest(pluginId),
+      );
+    }
+    fs.writeFileSync(
+      path.join(bundledPlugin, "scripts/browser-client.mjs"),
+      officialClient,
+    );
+    fs.writeFileSync(
+      path.join(bundledPlugin, "extension-host/linux/x64/extension-host"),
+      officialHost,
+    );
+    fs.writeFileSync(
+      path.join(matchingCache, "scripts/browser-client.mjs"),
+      "/*codexLinuxPerUserBrowserSocketDir*/ legacy client\n",
+    );
+    fs.writeFileSync(
+      path.join(matchingCache, "extension-host/linux/x64/extension-host"),
+      "legacy custom extension host\n",
+    );
+    fs.writeFileSync(path.join(matchingCache, "legacy-extra"), "remove me\n");
+    matchingCaches.push({ matchingCache, officialClient, officialHost });
+  }
+
+  const cacheRoot = path.join(codexHome, "plugins/cache/openai-bundled/browser");
+  const officialCache = path.join(cacheRoot, "official-copy");
+  fs.mkdirSync(path.join(officialCache, ".codex-plugin"), { recursive: true });
+  fs.mkdirSync(path.join(officialCache, "scripts"), { recursive: true });
+  fs.writeFileSync(
+    path.join(officialCache, ".codex-plugin/plugin.json"),
+    manifest("browser"),
+  );
+  const alreadyOfficialClient = "export const cachedOfficialClient = true;\n";
+  fs.writeFileSync(
+    path.join(officialCache, "scripts/browser-client.mjs"),
+    alreadyOfficialClient,
+  );
+
+  const unrelatedCache = path.join(cacheRoot, "custom");
+  fs.mkdirSync(path.join(unrelatedCache, ".codex-plugin"), { recursive: true });
+  fs.mkdirSync(path.join(unrelatedCache, "scripts"), { recursive: true });
+  fs.writeFileSync(
+    path.join(unrelatedCache, ".codex-plugin/plugin.json"),
+    '{"name":"browser","version":"custom"}\n',
+  );
+  const unrelatedClient = "/*codexLinuxIabSocketScope*/ custom client\n";
+  fs.writeFileSync(
+    path.join(unrelatedCache, "scripts/browser-client.mjs"),
+    unrelatedClient,
+  );
+
+  const pluginAppserver = path.join(codexHome, "plugins/.plugin-appserver");
+  fs.mkdirSync(pluginAppserver, { recursive: true, mode: 0o775 });
+  fs.chmodSync(pluginAppserver, 0o775);
+
+  const result = childProcess.spawnSync(path.join(root, "start.sh"), [], {
+    env: { ...process.env, CODEX_HOME: codexHome, TEST_ROOT: root },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 7);
+  assert.match(result.stderr, /Refreshed legacy browser plugin cache/);
+  assert.match(result.stderr, /Refreshed legacy chrome plugin cache/);
+  for (const { matchingCache, officialClient, officialHost } of matchingCaches) {
+    assert.equal(
+      fs.readFileSync(path.join(matchingCache, "scripts/browser-client.mjs"), "utf8"),
+      officialClient,
+    );
+    assert.equal(
+      fs.readFileSync(
+        path.join(matchingCache, "extension-host/linux/x64/extension-host"),
+        "utf8",
+      ),
+      officialHost,
+    );
+    assert.equal(fs.existsSync(path.join(matchingCache, "legacy-extra")), false);
+  }
+  assert.equal(
+    fs.readFileSync(path.join(officialCache, "scripts/browser-client.mjs"), "utf8"),
+    alreadyOfficialClient,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(unrelatedCache, "scripts/browser-client.mjs"), "utf8"),
+    unrelatedClient,
+  );
+  assert.equal(fs.statSync(pluginAppserver).mode & 0o022, 0);
 });
