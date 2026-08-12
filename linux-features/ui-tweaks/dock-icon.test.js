@@ -571,22 +571,83 @@ test("desktop synchronization discovers side-by-side launchers after an incompat
   }
 });
 
-test("desktop synchronization rejects a default launcher for a side-by-side app id", () => {
-  const fixture = createDesktopSyncFixture();
-  try {
-    const appId = "chatgpt-dock-side";
-    fixture.env.CODEX_LINUX_APP_ID = appId;
+test("desktop synchronization rejects every mismatched side-by-side identity field", () => {
+  const appId = "chatgpt-dock-side";
+  const validExec =
+    `Exec=env BAMF_DESKTOP_FILE_HINT=/usr/share/applications/${appId}.desktop ` +
+    `CHROME_DESKTOP=${appId}.desktop CODEX_APP_ID=${appId} /opt/${appId}/start.sh %u`;
+  const cases = [
+    [
+      "Exec",
+      "Exec=/usr/bin/codex-desktop %u",
+      `StartupWMClass=${appId}`,
+      `X-GNOME-WMClass=${appId}`,
+    ],
+    [
+      "StartupWMClass",
+      validExec,
+      "StartupWMClass=codex-desktop",
+      `X-GNOME-WMClass=${appId}`,
+    ],
+    [
+      "X-GNOME-WMClass",
+      validExec,
+      `StartupWMClass=${appId}`,
+      "X-GNOME-WMClass=codex-desktop",
+    ],
+    [
+      "CHROME_DESKTOP",
+      validExec.replace(`CHROME_DESKTOP=${appId}.desktop`, "CHROME_DESKTOP=codex-desktop.desktop"),
+      `StartupWMClass=${appId}`,
+      `X-GNOME-WMClass=${appId}`,
+    ],
+    [
+      "BAMF_DESKTOP_FILE_HINT",
+      validExec.replace(
+        `BAMF_DESKTOP_FILE_HINT=/usr/share/applications/${appId}.desktop`,
+        "BAMF_DESKTOP_FILE_HINT=/usr/share/applications/codex-desktop.desktop",
+      ),
+      `StartupWMClass=${appId}`,
+      `X-GNOME-WMClass=${appId}`,
+    ],
+    [
+      "CODEX_APP_ID",
+      validExec.replace(`CODEX_APP_ID=${appId}`, "CODEX_APP_ID=codex-desktop"),
+      `StartupWMClass=${appId}`,
+      `X-GNOME-WMClass=${appId}`,
+    ],
+  ];
 
-    const result = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
+  for (const [field, execLine, startupClass, gnomeClass] of cases) {
+    const fixture = createDesktopSyncFixture();
+    try {
+      const source = path.join(fixture.tempDir, `${appId}.desktop`);
+      fs.writeFileSync(
+        source,
+        [
+          "[Desktop Entry]",
+          "Name=Wrong identity",
+          execLine,
+          `Icon=${appId}`,
+          startupClass,
+          gnomeClass,
+        ].join("\n"),
+      );
+      fixture.env.CODEX_LINUX_APP_ID = appId;
+      fixture.env.CODEX_LINUX_DESKTOP_FILE_SOURCE = source;
 
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(
-      fs.existsSync(path.join(fixture.dataHome, "applications", `${appId}.desktop`)),
-      false,
-    );
-    assert.equal(fs.existsSync(fixture.managedIcon("chatgpt", appId)), false);
-    assert.equal(fs.existsSync(fixture.callsPath), false);
-  } finally {
-    fs.rmSync(fixture.tempDir, { recursive: true, force: true });
+      const result = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
+
+      assert.equal(result.status, 0, `${field}: ${result.stderr}`);
+      assert.equal(
+        fs.existsSync(path.join(fixture.dataHome, "applications", `${appId}.desktop`)),
+        false,
+        field,
+      );
+      assert.equal(fs.existsSync(fixture.managedIcon("chatgpt", appId)), false, field);
+      assert.equal(fs.existsSync(fixture.callsPath), false, field);
+    } finally {
+      fs.rmSync(fixture.tempDir, { recursive: true, force: true });
+    }
   }
 });
