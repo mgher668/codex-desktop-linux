@@ -65,6 +65,7 @@ test("launcher composes declarative hooks and forwards arguments", (t) => {
     "from-launcher",
   ]);
   assert.deepEqual(fs.readFileSync(path.join(root, "arguments"), "utf8").trim().split("\n"), [
+    "--class=codex-desktop",
     "--feature-arg=one two",
     "--launcher-arg=value",
     "codex://thread/123",
