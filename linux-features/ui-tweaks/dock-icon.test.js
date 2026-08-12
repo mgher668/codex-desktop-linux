@@ -3,6 +3,7 @@
 
 const assert = require("node:assert/strict");
 const childProcess = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -379,24 +380,21 @@ function createDesktopSyncFixture() {
     },
     firstIcon,
     managedDesktop: path.join(dataHome, "applications", "codex-desktop.desktop"),
-    managedIcon: (selection, appId = "codex-desktop") =>
+    managedIcon: (
+      selection,
+      appId = "codex-desktop",
+      content = selection === "chatgpt" ? "first-icon" : "second-icon",
+    ) =>
       path.join(
         dataHome,
         "icons",
         "hicolor",
         "256x256",
         "apps",
-        `${appId}-dock-${selection}.png`,
+        `${appId}-dock-${selection}-${crypto.createHash("sha256").update(content).digest("hex")}.png`,
       ),
-    managedIconOwnership: (selection, appId = "codex-desktop") =>
-      `${path.join(
-        dataHome,
-        "icons",
-        "hicolor",
-        "256x256",
-        "apps",
-        `${appId}-dock-${selection}.png`,
-      )}.codex-linux-sha256`,
+    legacyIcon: (selection, appId = "codex-desktop") =>
+      path.join(dataHome, "icons", "hicolor", "256x256", "apps", `${appId}-dock-${selection}.png`),
     secondIcon,
     tempDir,
   };
@@ -432,10 +430,6 @@ test("desktop synchronization updates a managed KDE launcher atomically", () => 
     assert.equal(first.status, 0, first.stderr);
     assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), "first-icon");
     assert.match(
-      fs.readFileSync(fixture.managedIconOwnership("chatgpt"), "utf8"),
-      /^[0-9a-f]{64}\n$/,
-    );
-    assert.match(
       fs.readFileSync(fixture.managedDesktop, "utf8"),
       /^X-Codex-Linux-Dock-Icon-SHA256=[0-9a-f]{64}$/m,
     );
@@ -452,7 +446,10 @@ test("desktop synchronization updates a managed KDE launcher atomically", () => 
     const second = runDesktopSync("codex-dark", fixture.secondIcon, fixture.env);
     assert.equal(second.status, 0, second.stderr);
     assert.equal(fs.readFileSync(fixture.managedIcon("codex-dark"), "utf8"), "second-icon");
-    assert.match(fs.readFileSync(fixture.managedDesktop, "utf8"), /dock-codex-dark\.png$/m);
+    assert.match(
+      fs.readFileSync(fixture.managedDesktop, "utf8"),
+      /dock-codex-dark-[0-9a-f]{64}\.png$/m,
+    );
   } finally {
     fs.rmSync(fixture.tempDir, { recursive: true, force: true });
   }
@@ -509,8 +506,6 @@ test("prelaunch cleanup removes only marker-owned Dock launcher artifacts", () =
     assert.equal(fs.existsSync(fixture.managedDesktop), false);
     assert.equal(fs.existsSync(fixture.managedIcon("chatgpt")), false);
     assert.equal(fs.existsSync(fixture.managedIcon("codex-dark")), false);
-    assert.equal(fs.existsSync(fixture.managedIconOwnership("chatgpt")), false);
-    assert.equal(fs.existsSync(fixture.managedIconOwnership("codex-dark")), false);
   } finally {
     fs.rmSync(fixture.tempDir, { recursive: true, force: true });
   }
@@ -519,7 +514,7 @@ test("prelaunch cleanup removes only marker-owned Dock launcher artifacts", () =
 test("prelaunch cleanup preserves a legacy marker without full managed-state proof", () => {
   const fixture = createDesktopSyncFixture();
   const appDir = path.join(fixture.tempDir, "app");
-  const legacyIcon = fixture.managedIcon("selection");
+  const legacyIcon = fixture.legacyIcon("selection");
   try {
     fs.mkdirSync(path.dirname(fixture.managedDesktop), { recursive: true });
     fs.mkdirSync(path.dirname(legacyIcon), { recursive: true });
@@ -552,9 +547,9 @@ test("prelaunch cleanup preserves symlinked and customized launcher artifacts", 
     const appDir = path.join(fixture.tempDir, "app");
     try {
       fs.mkdirSync(path.dirname(fixture.managedDesktop), { recursive: true });
-      fs.mkdirSync(path.dirname(fixture.managedIcon("chatgpt")), { recursive: true });
+      fs.mkdirSync(path.dirname(fixture.legacyIcon("chatgpt")), { recursive: true });
       fs.mkdirSync(appDir, { recursive: true });
-      fs.writeFileSync(fixture.managedIcon("chatgpt"), "unproven-icon");
+      fs.writeFileSync(fixture.legacyIcon("chatgpt"), "unproven-icon");
       if (kind === "symlink") {
         const outside = path.join(fixture.tempDir, "outside.desktop");
         fs.writeFileSync(outside, "[Desktop Entry]\nIcon=outside\nX-Codex-Linux-Dock-Icon=1\n");
@@ -570,7 +565,7 @@ test("prelaunch cleanup preserves symlinked and customized launcher artifacts", 
 
       assert.equal(cleaned.status, 0, cleaned.stderr);
       assert.equal(fs.existsSync(fixture.managedDesktop), true);
-      assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), "unproven-icon");
+      assert.equal(fs.readFileSync(fixture.legacyIcon("chatgpt"), "utf8"), "unproven-icon");
       assert.equal(fs.existsSync(fixture.callsPath), false);
     } finally {
       fs.rmSync(fixture.tempDir, { recursive: true, force: true });
@@ -625,17 +620,51 @@ test("sync and cleanup preserve pre-existing and modified icon resources", () =>
       }
 
       const before = fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8");
-      const sync = runDesktopSync("chatgpt", fixture.secondIcon, fixture.env);
+      const sync = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
       assert.equal(sync.status, 0, `${kind}: ${sync.stderr}`);
-      assert.match(sync.stderr, /not an unchanged managed resource/);
       assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), before, kind);
 
       const cleanup = runDesktopCleanup(appDir, fixture.env);
       assert.equal(cleanup.status, 0, `${kind}: ${cleanup.stderr}`);
       assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), before, kind);
+      if (kind === "modified") {
+        fs.rmSync(fixture.managedIcon("chatgpt"));
+        const resumed = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
+        assert.equal(resumed.status, 0, resumed.stderr);
+        assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), "first-icon");
+      }
     } finally {
       fs.rmSync(fixture.tempDir, { recursive: true, force: true });
     }
+  }
+});
+
+test("content-addressed icons recover interrupted sync and cleanup states", () => {
+  const fixture = createDesktopSyncFixture();
+  const appDir = path.join(fixture.tempDir, "app");
+  try {
+    fs.mkdirSync(appDir, { recursive: true });
+    const icon = fixture.managedIcon("chatgpt");
+
+    fs.mkdirSync(path.dirname(icon), { recursive: true });
+    fs.writeFileSync(icon, "first-icon");
+    const resumedInitialSync = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
+    assert.equal(resumedInitialSync.status, 0, resumedInitialSync.stderr);
+    assert.equal(fs.existsSync(fixture.managedDesktop), true);
+    assert.equal(fs.readFileSync(icon, "utf8"), "first-icon");
+
+    fs.rmSync(icon);
+    const resumedUpdate = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
+    assert.equal(resumedUpdate.status, 0, resumedUpdate.stderr);
+    assert.equal(fs.readFileSync(icon, "utf8"), "first-icon");
+
+    fs.rmSync(icon);
+    const resumedCleanup = runDesktopCleanup(appDir, fixture.env);
+    assert.equal(resumedCleanup.status, 0, resumedCleanup.stderr);
+    assert.equal(fs.existsSync(fixture.managedDesktop), false);
+    assert.equal(fs.existsSync(icon), false);
+  } finally {
+    fs.rmSync(fixture.tempDir, { recursive: true, force: true });
   }
 });
 

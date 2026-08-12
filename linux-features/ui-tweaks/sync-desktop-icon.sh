@@ -14,34 +14,25 @@ data_home="${XDG_DATA_HOME:-$home_dir/.local/share}"
 applications_dir="$data_home/applications"
 icons_dir="$data_home/icons/hicolor/256x256/apps"
 desktop_target="$applications_dir/$app_id.desktop"
-legacy_icon_target="$icons_dir/$app_id-dock-selection.png"
 legacy_marker="X-Codex-Linux-Dock-Icon=1"
 marker_prefix="X-Codex-Linux-Dock-Icon-SHA256="
-managed_icons=(
-    "$icons_dir/$app_id-dock-chatgpt.png"
-    "$icons_dir/$app_id-dock-codex-dark.png"
-    "$icons_dir/$app_id-dock-codex-light.png"
-    "$legacy_icon_target"
-)
-
-icon_ownership_path() {
-    printf '%s.codex-linux-sha256\n' "$1"
-}
 
 managed_icon_is_owned() {
     local icon="$1"
     local actual_digest
     local expected_digest
-    local ownership
-    ownership="$(icon_ownership_path "$icon")"
     [ -f "$icon" ] && [ ! -L "$icon" ] || return 1
-    [ -f "$ownership" ] && [ ! -L "$ownership" ] || return 1
-    IFS= read -r expected_digest < "$ownership" || return 1
+    case "$icon" in
+        "$icons_dir/$app_id-dock-chatgpt-"*.png) expected_digest="${icon#"$icons_dir/$app_id-dock-chatgpt-"}" ;;
+        "$icons_dir/$app_id-dock-codex-dark-"*.png) expected_digest="${icon#"$icons_dir/$app_id-dock-codex-dark-"}" ;;
+        "$icons_dir/$app_id-dock-codex-light-"*.png) expected_digest="${icon#"$icons_dir/$app_id-dock-codex-light-"}" ;;
+        *) return 1 ;;
+    esac
+    expected_digest="${expected_digest%.png}"
     case "$expected_digest" in
         *[!0-9a-f]*|'') return 1 ;;
     esac
     [ "${#expected_digest}" -eq 64 ] || return 1
-    [ "$(wc -l < "$ownership")" -eq 1 ] || return 1
     actual_digest="$(sha256sum "$icon" | awk '{print $1}')"
     [ "$actual_digest" = "$expected_digest" ]
 }
@@ -52,7 +43,7 @@ refresh_desktop_database() {
     fi
 }
 
-managed_desktop_is_owned() {
+managed_desktop_content_is_owned() {
     local actual_digest
     local expected_digest
     local icon_value
@@ -72,33 +63,34 @@ managed_desktop_is_owned() {
     [ "$actual_digest" = "$expected_digest" ] || return 1
     icon_value="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
     case "$icon_value" in
-        "$icons_dir/$app_id-dock-chatgpt.png"|"$icons_dir/$app_id-dock-codex-dark.png"|"$icons_dir/$app_id-dock-codex-light.png"|"$legacy_icon_target") ;;
+        "$icons_dir/$app_id-dock-chatgpt-"*.png|"$icons_dir/$app_id-dock-codex-dark-"*.png|"$icons_dir/$app_id-dock-codex-light-"*.png) ;;
         *) return 1 ;;
     esac
 }
 
+managed_desktop_is_owned() {
+    local icon_value
+    managed_desktop_content_is_owned || return 1
+    icon_value="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
+    managed_icon_is_owned "$icon_value"
+}
+
 cleanup_managed_desktop() {
-    local icon
-    local ownership
-    local changed=0
-    managed_desktop_is_owned || return 0
-    if rm -f -- "$desktop_target"; then
-        changed=1
-    else
+    local icon_value
+    managed_desktop_content_is_owned || return 0
+    icon_value="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
+    if [ -e "$icon_value" ] || [ -L "$icon_value" ]; then
+        managed_icon_is_owned "$icon_value" || return 0
+        if ! rm -f -- "$icon_value"; then
+            echo "WARN: Could not remove managed Dock icon resource: $icon_value" >&2
+            return 0
+        fi
+    fi
+    if ! rm -f -- "$desktop_target"; then
         echo "WARN: Could not remove managed Dock icon desktop entry: $desktop_target" >&2
         return 0
     fi
-    for icon in "${managed_icons[@]}"; do
-        ownership="$(icon_ownership_path "$icon")"
-        if managed_icon_is_owned "$icon"; then
-            if rm -f -- "$icon" "$ownership"; then
-                :
-            else
-                echo "WARN: Could not remove managed Dock icon resource: $icon" >&2
-            fi
-        fi
-    done
-    [ "$changed" -eq 0 ] || refresh_desktop_database
+    refresh_desktop_database
 }
 
 if [ "${CODEX_LINUX_FEATURE_HOOK_PHASE:-}" = "prelaunch" ]; then
@@ -117,8 +109,6 @@ case "$selection" in
     chatgpt|codex-dark|codex-light) ;;
     *) exit 0 ;;
 esac
-icon_target="$icons_dir/$app_id-dock-$selection.png"
-icon_ownership_target="$(icon_ownership_path "$icon_target")"
 
 desktop_source_matches_identity() {
     local source="$1"
@@ -161,7 +151,11 @@ desktop_exec_quote() {
 
 if [ -e "$desktop_target" ] || [ -L "$desktop_target" ]; then
     [ -f "$desktop_target" ] && [ ! -L "$desktop_target" ] || exit 0
-    managed_desktop_is_owned || exit 0
+    managed_desktop_content_is_owned || exit 0
+    current_icon="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
+    if [ -e "$current_icon" ] || [ -L "$current_icon" ]; then
+        managed_icon_is_owned "$current_icon" || exit 0
+    fi
 fi
 
 desktop_source="${CODEX_LINUX_DESKTOP_FILE_SOURCE:-}"
@@ -204,23 +198,21 @@ if grep -Eq '^Exec=(AppRun|.*[[:space:]]AppRun)([[:space:]]|$)' "$desktop_source
 fi
 
 mkdir -p "$applications_dir" "$icons_dir"
-if [ -e "$icon_target" ] || [ -L "$icon_target" ] ||
-   [ -e "$icon_ownership_target" ] || [ -L "$icon_ownership_target" ]; then
+desktop_content_tmp="$(mktemp "$applications_dir/.$app_id.desktop-content.XXXXXX")"
+desktop_tmp="$(mktemp "$applications_dir/.$app_id.desktop.XXXXXX")"
+icon_tmp="$(mktemp "$icons_dir/.$app_id-dock-selection.XXXXXX")"
+trap 'rm -f -- "$desktop_content_tmp" "$desktop_tmp" "$icon_tmp"' EXIT
+cat > "$icon_tmp"
+[ -s "$icon_tmp" ] || exit 0
+chmod 0644 "$icon_tmp"
+icon_digest="$(sha256sum "$icon_tmp" | awk '{print $1}')"
+icon_target="$icons_dir/$app_id-dock-$selection-$icon_digest.png"
+if [ -e "$icon_target" ] || [ -L "$icon_target" ]; then
     if ! managed_icon_is_owned "$icon_target"; then
         echo "WARN: Dock icon target is not an unchanged managed resource; leaving launchers unchanged: $icon_target" >&2
         exit 0
     fi
 fi
-desktop_content_tmp="$(mktemp "$applications_dir/.$app_id.desktop-content.XXXXXX")"
-desktop_tmp="$(mktemp "$applications_dir/.$app_id.desktop.XXXXXX")"
-icon_tmp="$(mktemp "$icons_dir/.$app_id-dock-selection.XXXXXX")"
-icon_ownership_tmp="$(mktemp "$icons_dir/.$app_id-dock-selection-sha256.XXXXXX")"
-trap 'rm -f -- "$desktop_content_tmp" "$desktop_tmp" "$icon_tmp" "$icon_ownership_tmp"' EXIT
-cat > "$icon_tmp"
-[ -s "$icon_tmp" ] || exit 0
-chmod 0644 "$icon_tmp"
-sha256sum "$icon_tmp" | awk '{print $1}' > "$icon_ownership_tmp"
-chmod 0600 "$icon_ownership_tmp"
 CODEX_DOCK_APPIMAGE_EXEC="$appimage_exec" awk -v icon="$icon_target" \
     -v legacy_marker="$legacy_marker" -v marker_prefix="$marker_prefix" '
     BEGIN { appimage_exec = ENVIRON["CODEX_DOCK_APPIMAGE_EXEC"] }
@@ -246,19 +238,21 @@ awk -v marker="$marker_prefix$desktop_digest" '
 chmod 0644 "$desktop_tmp"
 
 changed=0
-if [ ! -f "$icon_target" ] || ! cmp -s "$icon_tmp" "$icon_target"; then
+if [ ! -f "$icon_target" ]; then
     mv -f -- "$icon_tmp" "$icon_target"
-    mv -f -- "$icon_ownership_tmp" "$icon_ownership_target"
     changed=1
 else
     rm -f -- "$icon_tmp"
-    rm -f -- "$icon_ownership_tmp"
+fi
+previous_icon=""
+if managed_desktop_is_owned; then
+    previous_icon="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
 fi
 if [ ! -f "$desktop_target" ] || ! cmp -s "$desktop_tmp" "$desktop_target"; then
     mv -f -- "$desktop_tmp" "$desktop_target"
     changed=1
 fi
-if managed_icon_is_owned "$legacy_icon_target"; then
-    rm -f -- "$legacy_icon_target" "$(icon_ownership_path "$legacy_icon_target")"
+if [ -n "$previous_icon" ] && [ "$previous_icon" != "$icon_target" ] && managed_icon_is_owned "$previous_icon"; then
+    rm -f -- "$previous_icon" || true
 fi
 [ "$changed" -eq 0 ] || refresh_desktop_database
