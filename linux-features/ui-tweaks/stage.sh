@@ -43,16 +43,16 @@ if [ ! -f "$official_icon" ] || [ -L "$official_icon" ] ||
    ! grep -qxF 'Name=ChatGPT' "$official_desktop" ||
    ! grep -qxF 'Exec=chatgpt %U' "$official_desktop" ||
    ! grep -qxF 'Icon=chatgpt' "$official_desktop"; then
-    echo "WARN: Official Linux Dock icon resource or desktop metadata drifted; skipping Dock icon resources" >&2
+    echo "ERROR: Official Linux Dock icon resource or desktop metadata drifted; refusing incomplete Dock icon payload" >&2
     remove_dock_icon_payload
-    exit 0
+    exit 1
 fi
 
 for source in "$community_icon" "$helper_source"; do
     if [ ! -f "$source" ] || [ -L "$source" ]; then
-        echo "WARN: Dock icon feature resource is unavailable; skipping Dock icon resources: $source" >&2
+        echo "ERROR: Dock icon feature resource is unavailable; refusing incomplete Dock icon payload: $source" >&2
         remove_dock_icon_payload
-        exit 0
+        exit 1
     fi
 done
 

@@ -190,6 +190,79 @@ jobs:
           PACMAN_STAGE_ONLY=1 ./scripts/build-pacman.sh
           APPIMAGE_STAGE_ONLY=1 ./scripts/build-appimage.sh
 
+  dock-icon-feature-alone:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev gnupg
+      - name: Build Dock icon feature alone from the signed package
+        env:
+          CODEX_LINUX_FEATURES_CONFIG: ${{ github.workspace }}/dock-icon-features.json
+          CODEX_INSTALL_DIR: ${{ github.workspace }}/codex-app-dock-icon
+          CODEX_PATCH_REPORT_JSON: ${{ github.workspace }}/dock-icon-report/patch-report.json
+          CODEX_TARGET_ARCH: amd64
+        run: |
+          set -euo pipefail
+          cat > "$CODEX_LINUX_FEATURES_CONFIG" <<'JSON'
+          {
+            "enabled": ["ui-tweaks"],
+            "settings": {
+              "ui-tweaks": {
+                "tweaks": {
+                  "appearance": {
+                    "dockIcon": { "enabled": true }
+                  }
+                }
+              }
+            }
+          }
+          JSON
+          mkdir -p upstream
+          package="$(node scripts/lib/upstream-linux-package.js \
+            --output-dir upstream/amd64 \
+            --metadata upstream/amd64.json \
+            --key-base64 assets/openai-codex-linux-repository-key.gpg.base64 \
+            --arch amd64)"
+          ./install.sh "$package"
+          node scripts/ci/validate-patch-report.js "$CODEX_PATCH_REPORT_JSON" \
+            --require-enabled-feature ui-tweaks \
+            --require-applied feature:ui-tweaks:appearance-dock-icon-main-process \
+            --require-applied feature:ui-tweaks:appearance-dock-icon-settings-row
+          node - "$CODEX_PATCH_REPORT_JSON" <<'NODE'
+          const fs = require("node:fs");
+          const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const dock = report.patches.filter(({ name }) => name.includes(":appearance-dock-icon-"));
+          if (dock.length !== 2 || dock.some(({ status }) => status !== "applied")) {
+            throw new Error(`Expected Dock descriptors 2/2 applied, got ${JSON.stringify(dock)}`);
+          }
+          NODE
+          payload="$CODEX_INSTALL_DIR/resources/dock-icon"
+          diff -u <(printf '%s\n' \
+            icon-chatgpt.png \
+            icon-codex-dark-color.png \
+            icon-codex-light.png \
+            sync-desktop-icon.sh | sort) \
+            <(find "$payload" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
+          upstream_root="$(mktemp -d)"
+          dpkg-deb -x "$package" "$upstream_root"
+          cmp "$upstream_root/usr/lib/chatgpt/resources/icon-chatgpt.png" "$payload/icon-chatgpt.png"
+          cmp assets/codex-linux.png "$payload/icon-codex-dark-color.png"
+          cmp assets/codex-linux.png "$payload/icon-codex-light.png"
+          cmp linux-features/ui-tweaks/sync-desktop-icon.sh "$payload/sync-desktop-icon.sh"
+          test -x "$payload/sync-desktop-icon.sh"
+          hook="$CODEX_INSTALL_DIR/.codex-linux/prelaunch.d/ui-tweaks-dock-icon-cleanup.sh"
+          cmp linux-features/ui-tweaks/sync-desktop-icon.sh "$hook"
+          test -x "$hook"
+
   watchdog:
     runs-on: ubuntu-latest
     steps:
@@ -230,6 +303,7 @@ jobs:
     needs:
       - signed-baseline
       - package-matrix
+      - dock-icon-feature-alone
       - watchdog
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -238,8 +312,10 @@ jobs:
         env:
           SIGNED_BASELINE_RESULT: ${{ needs.signed-baseline.result }}
           PACKAGE_MATRIX_RESULT: ${{ needs.package-matrix.result }}
+          DOCK_ICON_FEATURE_ALONE_RESULT: ${{ needs.dock-icon-feature-alone.result }}
           WATCHDOG_RESULT: ${{ needs.watchdog.result }}
         run: |
           test "$SIGNED_BASELINE_RESULT" = success
           test "$PACKAGE_MATRIX_RESULT" = success
+          test "$DOCK_ICON_FEATURE_ALONE_RESULT" = success
           test "$WATCHDOG_RESULT" = success

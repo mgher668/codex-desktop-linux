@@ -59,11 +59,13 @@ signed official Linux package. The alternate choice uses the existing ChatGPT
 Community package icon; retired macOS DMG icon resources are not imported.
 
 Staging validates the official package's `chatgpt.desktop` identity before it
-copies the ChatGPT icon. Missing or changed package resources leave the Dock
-payload absent and emit a warning. The desktop helper writes only a
-marker-owned launcher derived from an identity-matching packaged entry, and the
-prelaunch hook removes only that managed override after the nested tweak is
-disabled.
+copies the ChatGPT icon. Missing or changed package resources reject the
+candidate so an enabled Dock tweak cannot be installed without its runtime
+payload. The desktop helper writes only a full-state-hash-owned launcher derived
+from an identity-matching packaged entry. AppImage launch commands are rewritten
+to the persistent AppImage path instead of the temporary mounted `AppRun`.
+The prelaunch hook removes only an unchanged managed override after the nested
+tweak is disabled; any user edit preserves the launcher and its icons.
 
 This tweak is independently disabled by default:
 
@@ -194,11 +196,12 @@ Config keys:
 
 ## Drift Behavior
 
-The patches are fail-soft. If upstream bundle markers drift, the feature writes
-a `WARN` message and leaves the asset unchanged. The patch report exposes that
-warning, and acceptance rejects a candidate when the enabled feature has drifted.
-Missing Dock icon package resources or metadata also warn, remove only the Dock
-icon payload, and do not abort staging. Suggested Prompts validates every current insertion point
+The ASAR patches are fail-soft. If upstream bundle markers drift, the feature
+writes a `WARN` message and leaves the asset unchanged. The patch report exposes
+that warning, and acceptance rejects a candidate when the enabled feature has
+drifted. Missing Dock icon package resources or metadata fail the stage hook,
+remove only the incomplete Dock icon payload, and reject candidate promotion.
+Suggested Prompts validates every current insertion point
 before changing an asset and leaves mixed or drifted input byte-identical.
 Invalid style values warn and fall back to the default bold style.
 

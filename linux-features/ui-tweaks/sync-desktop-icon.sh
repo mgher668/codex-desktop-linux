@@ -15,7 +15,8 @@ applications_dir="$data_home/applications"
 icons_dir="$data_home/icons/hicolor/256x256/apps"
 desktop_target="$applications_dir/$app_id.desktop"
 legacy_icon_target="$icons_dir/$app_id-dock-selection.png"
-marker="X-Codex-Linux-Dock-Icon=1"
+legacy_marker="X-Codex-Linux-Dock-Icon=1"
+marker_prefix="X-Codex-Linux-Dock-Icon-SHA256="
 managed_icons=(
     "$icons_dir/$app_id-dock-chatgpt.png"
     "$icons_dir/$app_id-dock-codex-dark.png"
@@ -30,9 +31,23 @@ refresh_desktop_database() {
 }
 
 managed_desktop_is_owned() {
+    local actual_digest
+    local expected_digest
     local icon_value
     [ -f "$desktop_target" ] && [ ! -L "$desktop_target" ] || return 1
-    grep -qxF "$marker" "$desktop_target" || return 1
+    expected_digest="$(awk -v prefix="$marker_prefix" '
+        index($0, prefix) == 1 { count += 1; digest = substr($0, length(prefix) + 1) }
+        END { if (count == 1) print digest }
+    ' "$desktop_target")"
+    case "$expected_digest" in
+        *[!0-9a-f]*|'') return 1 ;;
+    esac
+    [ "${#expected_digest}" -eq 64 ] || return 1
+    actual_digest="$(
+        awk -v prefix="$marker_prefix" 'index($0, prefix) != 1 { print }' "$desktop_target" |
+            sha256sum | awk '{print $1}'
+    )"
+    [ "$actual_digest" = "$expected_digest" ] || return 1
     icon_value="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
     case "$icon_value" in
         "$icons_dir/$app_id-dock-chatgpt.png"|"$icons_dir/$app_id-dock-codex-dark.png"|"$icons_dir/$app_id-dock-codex-light.png"|"$legacy_icon_target") ;;
@@ -105,9 +120,19 @@ desktop_source_matches_identity() {
     done < "$source"
 }
 
+desktop_exec_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//\`/\\\`}"
+    value="${value//\$/\\\$}"
+    value="${value//%/%%}"
+    printf '"%s"' "$value"
+}
+
 if [ -e "$desktop_target" ] || [ -L "$desktop_target" ]; then
     [ -f "$desktop_target" ] && [ ! -L "$desktop_target" ] || exit 0
-    grep -qxF "$marker" "$desktop_target" || exit 0
+    managed_desktop_is_owned || exit 0
 fi
 
 desktop_source="${CODEX_LINUX_DESKTOP_FILE_SOURCE:-}"
@@ -132,20 +157,53 @@ if ! desktop_source_matches_identity "$desktop_source"; then
     exit 0
 fi
 
+appimage_exec=""
+if grep -Eq '^Exec=(AppRun|.*[[:space:]]AppRun)([[:space:]]|$)' "$desktop_source"; then
+    appimage_path="${APPIMAGE:-}"
+    case "$appimage_path" in
+        /*) ;;
+        *)
+            echo "WARN: Dock icon AppImage desktop source has no persistent AppImage path; leaving launchers unchanged" >&2
+            exit 0
+            ;;
+    esac
+    if [ ! -f "$appimage_path" ] || [ ! -x "$appimage_path" ]; then
+        echo "WARN: Dock icon AppImage path is not an executable file; leaving launchers unchanged: $appimage_path" >&2
+        exit 0
+    fi
+    appimage_exec="$(desktop_exec_quote "$appimage_path")"
+fi
+
 mkdir -p "$applications_dir" "$icons_dir"
+desktop_content_tmp="$(mktemp "$applications_dir/.$app_id.desktop-content.XXXXXX")"
 desktop_tmp="$(mktemp "$applications_dir/.$app_id.desktop.XXXXXX")"
 icon_tmp="$(mktemp "$icons_dir/.$app_id-dock-selection.XXXXXX")"
-trap 'rm -f -- "$desktop_tmp" "$icon_tmp"' EXIT
+trap 'rm -f -- "$desktop_content_tmp" "$desktop_tmp" "$icon_tmp"' EXIT
 cat > "$icon_tmp"
 [ -s "$icon_tmp" ] || exit 0
 chmod 0644 "$icon_tmp"
-awk -v icon="$icon_target" -v marker="$marker" '
-    $0 == marker { next }
+CODEX_DOCK_APPIMAGE_EXEC="$appimage_exec" awk -v icon="$icon_target" \
+    -v legacy_marker="$legacy_marker" -v marker_prefix="$marker_prefix" '
+    BEGIN { appimage_exec = ENVIRON["CODEX_DOCK_APPIMAGE_EXEC"] }
+    function replace_literal(value, needle, replacement, output, position) {
+        output = ""
+        while ((position = index(value, needle)) != 0) {
+            output = output substr(value, 1, position - 1) replacement
+            value = substr(value, position + length(needle))
+        }
+        return output value
+    }
+    $0 == legacy_marker || index($0, marker_prefix) == 1 { next }
+    /^Exec=/ && appimage_exec != "" { $0 = replace_literal($0, "AppRun", appimage_exec) }
     /^Icon=/ && !icon_written { print "Icon=" icon; icon_written=1; next }
+    { print }
+' "$desktop_source" > "$desktop_content_tmp"
+desktop_digest="$(sha256sum "$desktop_content_tmp" | awk '{print $1}')"
+awk -v marker="$marker_prefix$desktop_digest" '
     /^\[/ && $0 != "[Desktop Entry]" && !marker_written { print marker; marker_written=1 }
     { print }
-    END { if (icon_written && !marker_written) print marker }
-' "$desktop_source" > "$desktop_tmp"
+    END { if (!marker_written) print marker }
+' "$desktop_content_tmp" > "$desktop_tmp"
 chmod 0644 "$desktop_tmp"
 
 changed=0
