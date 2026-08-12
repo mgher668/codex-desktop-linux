@@ -9,8 +9,6 @@ let
     "automation-extensions"
     "codex-micro"
     "computer-use-linux"
-    "conversation-delete"
-    "conversation-mode"
     "copilot-reasoning-effort"
     "directory-only-working-tree-watch"
     "frameless-titlebar"
@@ -30,7 +28,6 @@ let
     "remote-mobile-control"
     "shallow-repository-watches"
     "shared-app-server-socket"
-    "ssh-command-wrapper"
     "thorium-chrome-plugin"
     "ui-tweaks"
   ];

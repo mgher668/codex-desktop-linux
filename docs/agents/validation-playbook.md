@@ -23,11 +23,18 @@ fixtures and fail closed.
 Build with `features.example.json`, inspect `.codex-linux/build-info.json`, and
 compare the official and staged `resources/app.asar` hashes. Confirm no runtime
 replacement, external CLI, or local content server appears in the staged tree.
+Confirm the desktop name is **ChatGPT Community**, its icon has the community
+mark, and the package/bin/path identity is still `codex-desktop`.
 
 Smoke-test login, project open, terminal, file picker, URI launch, tray,
 notifications, clean quit, and a second launch on GNOME Wayland, KDE Wayland,
 and X11. Verify official/custom coexistence and shared-profile single-instance
 behavior.
+
+When upgrading an installation made by the former Linux port, also exercise the
+recognized Browser/Chrome cache migration. Confirm the official clients use
+`/tmp/codex-browser-use`, the Chrome app-server parent is not group-writable,
+and unrelated/user-authored plugin caches are unchanged.
 
 ## Features
 

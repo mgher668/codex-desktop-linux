@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const { pinsFromMetadata, sha256Sri } = require("./watchdog.js");
 
@@ -21,4 +23,14 @@ test("watchdog rejects a split stable version", () => {
     { version: "1", architecture: "amd64", repositoryPath: "a", sha256: "a".repeat(64) },
     { version: "2", architecture: "arm64", repositoryPath: "b", sha256: "b".repeat(64) },
   ]), /versions differ/);
+});
+
+test("pin refresh automation polls signed metadata and gates builds on changes", () => {
+  const workflow = fs.readFileSync(
+    path.resolve(__dirname, "../../../.github/workflows/update-official-linux-pins.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /schedule:\s*\n\s*- cron:/);
+  assert.match(workflow, /watchdog\.js --write --json/);
+  assert.match(workflow, /if: steps\.pins\.outputs\.changed == 'true'/);
 });

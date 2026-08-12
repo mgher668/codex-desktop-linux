@@ -165,7 +165,7 @@ async fn install_ready(
         state.status = UpdateStatus::WaitingForAppExit;
         state.waiting_for_app_exit_auto_install = config.auto_install_on_app_exit;
         state.save_updater(&paths.state_file)?;
-        println!("Update is ready; close ChatGPT Desktop to install it.");
+        println!("Update is ready; close ChatGPT Community to install it.");
         return Ok(());
     }
     if !explicit_retry && !config.auto_install_on_app_exit {

@@ -66,7 +66,7 @@ Environment variables:
                       Allow overwriting INSTALL_DIR while Codex is running
   CODEX_APP_ID        Override Linux app id/bin identity (default: codex-desktop)
   CODEX_APP_DISPLAY_NAME
-                      Override display name (default: ChatGPT)
+                      Override display name (default: ChatGPT Community)
   UPSTREAM_DEB        Equivalent to the optional positional .deb path
   CODEX_UPSTREAM_LINUX_REPOSITORY
                       Override the official repository URL for fixture testing

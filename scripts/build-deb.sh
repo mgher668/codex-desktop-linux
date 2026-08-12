@@ -33,12 +33,15 @@ validate_max_build_threads() {
 }
 
 map_arch() {
-    case "$(dpkg --print-architecture)" in
-        amd64|arm64|armhf)
-            dpkg --print-architecture
+    local architecture
+    architecture="$(dpkg --print-architecture)"
+    case "$architecture" in
+        amd64|arm64)
+            assert_official_payload_architecture "$architecture"
+            printf '%s\n' "$architecture"
             ;;
         *)
-            error "Unsupported Debian architecture: $(dpkg --print-architecture)"
+            error "Unsupported Debian architecture: $architecture (official packages support amd64 and arm64 only)"
             ;;
     esac
 }
@@ -84,11 +87,28 @@ main() {
     restore_linux_feature_payload_permissions "$PKG_ROOT"
     restore_linux_feature_package_resource_permissions "$PKG_ROOT" "deb"
 
+    local upstream_depends upstream_recommends upstream_suggests
+    upstream_depends="$(upstream_linux_control_field Depends)"
+    upstream_recommends="$(upstream_linux_control_field Recommends)"
+    upstream_suggests="$(upstream_linux_control_field Suggests)"
+    [ -n "$upstream_depends" ] || error "Official Linux package control metadata has no Depends field"
+
     sed \
         -e "s/__PACKAGE_NAME__/$PACKAGE_NAME/g" \
         -e "s/__VERSION__/$PACKAGE_VERSION/g" \
         -e "s/__ARCH__/$arch/g" \
         "$CONTROL_TEMPLATE" > "$PKG_ROOT/DEBIAN/control"
+    replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPSTREAM_DEPENDENCIES__" "$upstream_depends"
+    if [ -n "$upstream_recommends" ]; then
+        replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPSTREAM_RECOMMENDS__" "$upstream_recommends"
+    else
+        sed -i '/^Recommends: __UPSTREAM_RECOMMENDS__$/d' "$PKG_ROOT/DEBIAN/control"
+    fi
+    if [ -n "$upstream_suggests" ]; then
+        replace_literal_file_token "$PKG_ROOT/DEBIAN/control" "__UPSTREAM_SUGGESTS__" "$upstream_suggests"
+    else
+        sed -i '/^Suggests: __UPSTREAM_SUGGESTS__$/d' "$PKG_ROOT/DEBIAN/control"
+    fi
     if package_with_updater_enabled; then
         replace_literal_file_token \
             "$PKG_ROOT/DEBIAN/control" \

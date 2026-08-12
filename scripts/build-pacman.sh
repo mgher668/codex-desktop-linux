@@ -31,9 +31,15 @@ validate_max_build_threads() {
 
 map_arch() {
 	case "$(uname -m)" in
-	x86_64) echo "x86_64" ;;
-	aarch64) echo "aarch64" ;;
-	*) error "Unsupported architecture: $(uname -m)" ;;
+	x86_64)
+		assert_official_payload_architecture amd64
+		echo "x86_64"
+		;;
+	aarch64|arm64)
+		assert_official_payload_architecture arm64
+		echo "aarch64"
+		;;
+	*) error "Unsupported pacman architecture: $(uname -m) (official packages support amd64 and arm64 only)" ;;
 	esac
 }
 

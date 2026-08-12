@@ -1,8 +1,11 @@
 # Raspberry Pi 5
 
-The core ChatGPT Desktop for Linux build has been validated on a 16 GB
-Raspberry Pi 5. The existing upstream ARM64 support built and ran without a
-Pi-specific source patch.
+ChatGPT Community has been validated on a 16 GB Raspberry Pi 5. The existing
+upstream ARM64 support built and ran without a Pi-specific source patch.
+
+This is a historical field-test record. Current builds still resolve the latest
+signed stable OpenAI `arm64` `.deb`; do not pin the older version below as an
+installation source.
 
 This page records a field test, not a separate Raspberry Pi port. ARM64 support
 comes from the work already maintained in this repository by
@@ -23,8 +26,9 @@ The successful test used:
 
 The native build acceptance verdict was `accepted`, with no blockers or
 warnings. The generated Debian package reported `Architecture: arm64`, and the
-Electron executable, native Node modules, Linux helpers, and Codex CLI platform
-binary were verified as AArch64 executables.
+official Electron executable, native Node modules, Linux helpers, and bundled
+Codex CLI platform binary were verified as AArch64 executables. The project did
+not download a replacement Electron or rebuild upstream native modules.
 
 ## Build and install
 
@@ -52,10 +56,9 @@ PACKAGE_WITH_UPDATER=0 MAX_BUILD_THREADS=4 make build-app-fresh
 PACKAGE_WITH_UPDATER=0 MAX_BUILD_THREADS=4 make deb
 ```
 
-Install the generated package from `dist/` with the normal Debian package
-manager. Do not download or redistribute someone else's generated package:
-this project intentionally performs the conversion locally from the official
-upstream application.
+Install the generated `codex-desktop_*.deb` from `dist/` with the normal Debian
+package manager. The source application is the official signed OpenAI ARM64
+Linux `.deb`, extracted directly without executing maintainer scripts.
 
 ## Desktop setup
 
@@ -135,13 +138,11 @@ Granting access to `/dev/uinput` and running `ydotoold` allows synthetic input.
 Limit access to trusted local users, keep the device rule group-scoped, and do
 not use a world-writable device mode.
 
-One known architecture-specific gap remains: the repository's Browser Use
-`node_repl` fallback resource is currently x86-64-only when no compatible
-upstream or user-supplied ARM64 binary is available. The Browser and Chrome
-plugins were enabled and discoverable during this test, but the demonstrated
-workflow used Chromium through Linux Computer Use. Treat Browser Use as a
-separate capability until its execution path is independently validated on
-ARM64.
+The Browser and Chrome plugins were enabled and discoverable during this
+historical test, but the demonstrated workflow used Chromium through Linux
+Computer Use. The current official ARM64 package owns the Browser/Chrome
+runtime; validate actual Browser and extension connection separately on the
+current signed stable version instead of relying on this older test result.
 
 ## Remaining validation
 

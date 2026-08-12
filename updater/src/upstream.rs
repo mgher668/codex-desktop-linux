@@ -3,7 +3,10 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use tokio::process::Command;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -19,8 +22,12 @@ pub struct PackageMetadata {
     pub path: Option<PathBuf>,
 }
 
-pub async fn resolve_metadata(builder_root: &Path, repository: &str, cache: &Path) -> Result<PackageMetadata> {
-    run_verifier(builder_root, repository, cache, true).await
+pub async fn resolve_metadata(
+    builder_root: &Path,
+    repository: &str,
+    cache: &Path,
+) -> Result<PackageMetadata> {
+    run_verifier(builder_root, repository, cache, true, None).await
 }
 
 pub async fn download_verified_package(
@@ -38,13 +45,38 @@ pub async fn download_verified_package(
         return Ok(destination);
     }
 
-    let resolved = run_verifier(builder_root, repository, cache, false).await?;
-    anyhow::ensure!(same_identity(&resolved, expected), "signed package metadata changed while downloading");
-    let source = resolved.path.as_ref().context("verifier returned no package path")?;
+    let resolved = run_verifier(
+        builder_root,
+        repository,
+        cache,
+        false,
+        Some(&expected.architecture),
+    )
+    .await?;
+    anyhow::ensure!(
+        same_identity(&resolved, expected),
+        "signed package metadata changed while downloading"
+    );
+    let source = resolved
+        .path
+        .as_ref()
+        .context("verifier returned no package path")?;
     fs::rename(source, &destination)
         .or_else(|_| fs::copy(source, &destination).map(|_| ()))
         .with_context(|| format!("Failed to publish {}", destination.display()))?;
-    anyhow::ensure!(verify_cached_file(&destination, expected)?, "published package failed SHA256/size verification");
+    anyhow::ensure!(
+        verify_cached_file(&destination, expected)?,
+        "published package failed SHA256/size verification"
+    );
+    if let Some(run_dir) = source.parent() {
+        let is_verifier_run = run_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("metadata-"));
+        if is_verifier_run {
+            let _ = fs::remove_dir_all(run_dir);
+        }
+    }
     Ok(destination)
 }
 
@@ -63,8 +95,13 @@ async fn run_verifier(
     repository: &str,
     cache: &Path,
     metadata_only: bool,
+    architecture: Option<&str>,
 ) -> Result<PackageMetadata> {
-    let run_dir = cache.join(format!("metadata-{}-{}", std::process::id(), if metadata_only { "probe" } else { "download" }));
+    let run_dir = cache.join(format!(
+        "metadata-{}-{}",
+        std::process::id(),
+        if metadata_only { "probe" } else { "download" }
+    ));
     if run_dir.exists() {
         fs::remove_dir_all(&run_dir)?;
     }
@@ -73,21 +110,45 @@ async fn run_verifier(
     let mut command = Command::new("node");
     command
         .arg(builder_root.join("scripts/lib/upstream-linux-package.js"))
-        .args(["--output-dir", run_dir.to_str().context("non-UTF8 cache path")?])
-        .args(["--metadata", metadata_path.to_str().context("non-UTF8 metadata path")?])
-        .args(["--key-base64", builder_root.join("assets/openai-codex-linux-repository-key.gpg.base64").to_str().context("non-UTF8 key path")?])
+        .args([
+            "--output-dir",
+            run_dir.to_str().context("non-UTF8 cache path")?,
+        ])
+        .args([
+            "--metadata",
+            metadata_path.to_str().context("non-UTF8 metadata path")?,
+        ])
+        .args([
+            "--key-base64",
+            builder_root
+                .join("assets/openai-codex-linux-repository-key.gpg.base64")
+                .to_str()
+                .context("non-UTF8 key path")?,
+        ])
         .args(["--repository", repository]);
+    if let Some(architecture) = architecture {
+        command.args(["--arch", architecture]);
+    }
     if metadata_only {
         command.arg("--metadata-only");
     }
-    let output = command.output().await.context("Failed to start signed package verifier")?;
+    let output = command
+        .output()
+        .await
+        .context("Failed to start signed package verifier")?;
     anyhow::ensure!(
         output.status.success(),
         "signed package verifier failed: {}",
         String::from_utf8_lossy(&output.stderr).trim()
     );
     let metadata: PackageMetadata = serde_json::from_slice(&fs::read(&metadata_path)?)?;
-    anyhow::ensure!(metadata.package == "chatgpt", "signed index selected an unexpected package");
+    anyhow::ensure!(
+        metadata.package == "chatgpt",
+        "signed index selected an unexpected package"
+    );
+    if metadata_only {
+        let _ = fs::remove_dir_all(&run_dir);
+    }
     Ok(metadata)
 }
 
@@ -110,11 +171,19 @@ mod tests {
     #[test]
     fn cache_identity_contains_version_architecture_and_sha() {
         let metadata = PackageMetadata {
-            package: "chatgpt".into(), version: "26.1".into(), architecture: "amd64".into(),
-            repository_path: "pool/chatgpt.deb".into(), sha256: "a".repeat(64), size: 1,
-            repository: "https://example.invalid".into(), path: None,
+            package: "chatgpt".into(),
+            version: "26.1".into(),
+            architecture: "amd64".into(),
+            repository_path: "pool/chatgpt.deb".into(),
+            sha256: "a".repeat(64),
+            size: 1,
+            repository: "https://example.invalid".into(),
+            path: None,
         };
-        let name = format!("chatgpt-{}-{}-{}.deb", metadata.version, metadata.architecture, metadata.sha256);
+        let name = format!(
+            "chatgpt-{}-{}-{}.deb",
+            metadata.version, metadata.architecture, metadata.sha256
+        );
         assert!(name.contains("26.1-amd64"));
         assert!(name.ends_with(".deb"));
     }

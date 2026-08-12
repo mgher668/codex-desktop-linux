@@ -1,6 +1,6 @@
 # Omarchy Theme
 
-Optional integration that makes Codex Desktop follow the active
+Optional integration that makes ChatGPT Community follow the active
 [Omarchy](https://omarchy.org/) color palette. It is disabled by default.
 
 The feature:
@@ -25,7 +25,7 @@ Add the feature to the gitignored `linux-features/features.json`:
 }
 ```
 
-Then rebuild Codex Desktop with `./install.sh`, `make install-native`, or the
+Then rebuild ChatGPT Community with `./install.sh`, `make install-native`, or the
 corresponding AppImage/Nix workflow. The generated app must be rebuilt after
 changing feature selection.
 

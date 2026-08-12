@@ -17,6 +17,11 @@ configuration:
 }
 ```
 
+`make setup-native` is the interactive editor for this configuration;
+`make install-native` is the separate build/package/install step. A feature
+remains enabled for updater rebuilds because its validated snapshot is included
+in the custom package's minimal update-builder.
+
 Known retired IDs are discarded during config loading. Other unknown IDs,
 duplicate IDs, malformed settings, default-enabled manifests, unmet
 requirements, and conflicts are errors.

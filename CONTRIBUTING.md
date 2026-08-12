@@ -1,4 +1,4 @@
-# Contributing to Codex Desktop for Linux
+# Contributing to ChatGPT Community for Linux
 
 Keep only one pull request open at a time (two only for an explicit maintainer
 exception). Keep each change focused and stay engaged through review.
@@ -7,6 +7,11 @@ This project supports only the latest signed stable OpenAI Linux package on the
 two published architectures. When upstream changes, remove obsolete drift
 workarounds in the same pull request; do not retain version-specific branches or
 fallback shapes.
+
+OpenAI's signed Linux `.deb` is the only upstream. Do not reintroduce an
+alternate source format or reconstruct parts of the upstream runtime.
+**ChatGPT Community** is the desktop display name;
+`codex-desktop` remains the package, executable, and path identity.
 
 ## Before editing
 
@@ -20,6 +25,9 @@ fallback shapes.
   disabled-by-default `linux-features/<id>/` module with a README.
 - Do not add a core ASAR patch without a reproduced mandatory failure and a
   required regression test.
+- Keep legacy bundled-plugin migrations limited to recognized upstream-bundled
+  Browser/Chrome snapshots. Never clear arbitrary plugin caches as a generic
+  repair strategy.
 
 Primary source routing:
 
@@ -39,6 +47,11 @@ cd codex-desktop-linux
 bash scripts/install-deps.sh
 ./install.sh
 ```
+
+For the normal installed application use `make install-native`; use
+`make setup-native` first only when you want the interactive optional-feature
+wizard. `make bootstrap-native` installs dependencies before performing the
+same native build/package/install flow.
 
 The build requires Node.js 20+, npm, Python 3, curl, `gpgv`, `dpkg-deb`,
 SHA-256 utilities, tar, make, and a C/C++ toolchain. Rust is required for the

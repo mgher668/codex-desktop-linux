@@ -2,6 +2,10 @@
 
 ## Build flow
 
+The sole upstream artifact is OpenAI's signed Linux `.deb`. Unattended builds
+resolve it through signed stable APT metadata rather than trusting the moving
+`latest` download alias.
+
 1. `scripts/lib/upstream-linux-package.js` selects `amd64` or `arm64`, verifies
    OpenAI's signed stable metadata with the pinned repository key, and verifies
    the selected package digest and control fields.
@@ -67,10 +71,17 @@ runtime refresh.
 ## Identity and data
 
 Native packages use `codex-desktop` and `/opt/codex-desktop`; the official app
-uses `chatgpt`. Desktop entries and AppArmor paths are distinct. The upstream
-`Codex` profile is intentionally preserved for compatibility, so both runtimes
-must not run simultaneously. The upstream single-instance lock governs a second
-launch.
+uses `chatgpt`. The custom desktop entry is **ChatGPT Community**, with a
+community-marked icon; desktop entries and AppArmor paths are distinct. The
+upstream `Codex` profile is intentionally preserved for compatibility, so both
+runtimes must not run simultaneously. The upstream single-instance lock governs
+a second launch.
+
+The wrapper has one narrowly scoped migration for bundled Browser and Chrome
+cache snapshots created by the former Linux port. It replaces a cache only when
+the bundled manifest matches and a retired marker is present, then restores the
+official socket/host contract. It never clears arbitrary plugin caches or
+user-authored plugins.
 
 ## Updates
 

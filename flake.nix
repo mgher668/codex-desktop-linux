@@ -42,8 +42,8 @@
         };
         runtimeLibraries = with pkgs; [
           alsa-lib atk at-spi2-atk at-spi2-core cairo cups dbus expat
-          gdk-pixbuf glib gtk3 libdrm libgbm libnotify libusb1 libxkbcommon
-          mesa nspr nss pango systemd stdenv.cc.cc.lib wayland
+          gdk-pixbuf glib graphite2 gtk3 libdrm libgbm libnotify libusb1 libxkbcommon
+          mesa nspr nss openssl pango systemd stdenv.cc.cc.lib wayland xz
           libX11 libXcomposite libXdamage libXext libXfixes libXrandr
           libxcb libxcrypt-legacy zlib
         ];

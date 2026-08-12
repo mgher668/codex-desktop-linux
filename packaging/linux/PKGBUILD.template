@@ -1,4 +1,4 @@
-# Maintainer: ChatGPT Desktop for Linux Maintainers
+# Maintainer: ChatGPT Community for Linux Maintainers
 pkgname=__PACKAGE_NAME__
 pkgver=__PKGVER__
 pkgrel=__PKGREL__
@@ -19,10 +19,16 @@ depends=(
     'atk'
     'cairo'
     'dbus'
+    'expat'
+    'gdk-pixbuf2'
     'glib2'
+    'graphite'
     'gtk3'
     'libcups'
     'libdrm'
+    'libglvnd'
+    'libnotify'
+    'libusb'
     'libx11'
     'libxcb'
     'libxcomposite'
@@ -34,7 +40,10 @@ depends=(
     'mesa'
     'nspr'
     'nss'
+    'openssl'
     'pango'
+    'systemd-libs'
+    'xz'
 __LINUX_FEATURE_DEPENDENCIES__
 )
 optdepends=(

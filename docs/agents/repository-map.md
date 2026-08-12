@@ -19,6 +19,8 @@
 
 The official Linux package supplies the complete application runtime and
 bundled commands. There is no repository-owned runtime replacement layer.
+The packaged desktop entry is **ChatGPT Community**; `codex-desktop` remains
+the package, executable, and installation-path identity.
 
-Generated output includes `codex-app/`, candidates, `dist/`, `dist-next/`, and
-`target/`. Fix their source owners and regenerate.
+Generated output includes `codex-app/`, `codex-app.backup-*`, candidates,
+`dist/`, `dist-next/`, and `target/`. Fix their source owners and regenerate.

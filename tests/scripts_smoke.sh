@@ -35,6 +35,8 @@ assert_contains launcher/start.sh.template 'refresh_legacy_bundled_plugin_caches
 assert_contains launcher/start.sh.template 'codexLinuxPerUserBrowserSocketDir|codexLinuxIabSocketScope'
 assert_contains launcher/start.sh.template '.plugin-appserver'
 assert_contains Makefile 'scripts/select-latest-package.sh'
+assert_contains Makefile 'build-native-feature-helpers'
+assert_contains Makefile 'global-dictation-linux/Cargo.toml --target-dir global-dictation-linux/target'
 assert_absent Makefile "compgen -G \"\$\$1\" | sort -V"
 assert_absent launcher/start.sh.template 'local content server'
 assert_contains packaging/linux/control 'official Linux runtime'

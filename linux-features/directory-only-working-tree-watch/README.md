@@ -1,6 +1,6 @@
 # Directory-Only Working-Tree Watch
 
-This opt-in Linux feature replaces Codex Desktop's recursive working-tree
+This opt-in Linux feature replaces ChatGPT Community's recursive working-tree
 `fs.watch` call with [Watchbound](https://www.npmjs.com/package/watchbound).
 Watchbound owns recursive inotify topology, process-wide native-watch
 allocation, bounded delivery, coverage reporting, reconciliation, root
@@ -58,34 +58,30 @@ alternative policies; do not enable both at once.
 ## Current package boundary
 
 The integration pins the official Watchbound `2.1.1` wrapper, neutral loader,
-x64 GNU target, ARM64 GNU target, and ARMv7 GNU hard-float target archives. The
+x64 GNU target, and ARM64 GNU target archives. The
 artifact manifest records each registry URL, npm integrity, npm shasum, archive
-SHA-256, complete file contract, and native SHA-256. It must contain all three
-supported Codex Linux architectures, while staging selects exactly one target
-for the build architecture. Musl, ARM soft-float or unknown ARM ABIs, and
+SHA-256, complete file contract, and native SHA-256. It must contain both
+officially supported ChatGPT Linux architectures, while staging selects exactly
+one target for the build architecture. Musl, ARMv7/armhf, and
 non-Linux targets are rejected by Watchbound's runtime qualification. The
 selected `.node` file is unpacked by the existing ASAR native-file rule.
 
-Normal builds fetch the pinned npm packages. The manifest pins five archives in
+Normal builds fetch the pinned npm packages. The manifest pins four archives in
 total; a fully offline build provides the three selected for its architecture:
 
 ```bash
 export CODEX_WATCHBOUND_ARCHIVE=/path/to/watchbound-2.1.1.tgz
 export CODEX_WATCHBOUND_NODE_ARCHIVE=/path/to/gadicc-watchbound-node-2.1.1.tgz
 export CODEX_WATCHBOUND_NODE_X64_ARCHIVE=/path/to/gadicc-watchbound-node-linux-x64-gnu-2.1.1.tgz
-# Use CODEX_WATCHBOUND_NODE_ARM64_ARCHIVE on ARM64 or
-# CODEX_WATCHBOUND_NODE_ARM_ARCHIVE on ARMv7/armhf.
+# Use CODEX_WATCHBOUND_NODE_ARM64_ARCHIVE on ARM64.
 ./install.sh /path/to/chatgpt_<version>_<arch>.deb
 ```
 
-Watchbound `2.1.1` qualifies x64, ARM64, and exact little-endian ARMv7
-hard-float GNU/Linux with a Linux 5.15 floor, Node 24.15–24.x, and a GLIBC 2.35
+Watchbound `2.1.1` qualifies x64 and ARM64 GNU/Linux with a Linux 5.15 floor,
+Node 24.15–24.x, and a GLIBC 2.35
 baseline. Its native matrix covers Ubuntu 22.04/24.04, Debian 12, Fedora 42,
 openSUSE Tumbleweed, Nix, and Arch on x64; ARM64 has the same lanes except Arch.
-ARMv7 has deterministic cross-build/package evidence plus production loader
-and watch lifecycles under pinned QEMU-user Electron 42.3.0 and a booted ARMHF
-5.15 kernel; this is emulated qualification, not native-hardware or performance
-evidence. The adapter consumes capability schema 9 and requires binding API 5,
+The adapter consumes capability schema 9 and requires binding API 5,
 lockstep wrapper/native/engine `2.1.1` identities, native directory-name exclusions,
 observed excluded paths, exact path bytes, root qualification, physical root
 resolution, and `support.currentRuntime.targetCompatible`. It requires

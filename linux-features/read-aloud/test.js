@@ -180,7 +180,8 @@ test("main bundle helper preserves the official Electron binding across patch re
 test("webview runtime appends only once", () => {
   const patched = twice(applyIndexRuntimePatch, "console.log(`index`);");
   assert.match(patched, /codexLinuxReadAloudClick/);
-  assert.match(patched, /vscode:\/\/codex\/"\+METHOD/);
+  assert.match(patched, /vscode:\/\/codex\/"\+method/);
+  assert.match(patched, /codexLinuxReadAloudGetSetting=key=>hostPost\("get-global-state"/);
   assert.match(patched, /codex-message-from-view/);
   assert.match(patched, /__codexForwardedViaBridge/);
   assert.match(patched, /Starting voice/);
@@ -1010,19 +1011,26 @@ test("assistant runtime descriptor targets current shared assistant bundles", ()
   assert.ok(descriptor);
   assert.equal(
     descriptor.pattern.test(
-      "app-initial-BHB6SClA.js",
+      "local-conversation-turn-BSHPwQLO.js",
     ),
     true,
   );
   for (const legacyName of [
     "index-current.js",
     "local-conversation-thread-current.js",
-    "local-conversation-turn-current.js",
+    "app-initial-BHB6SClA.js",
     "app-initial~app-main~onboarding-page-zcfEkMl-.js",
     "app-initial~app-main~onboarding-page~hotkey-window-thread-page~editor-diff-page~thread-app-~current.js",
   ]) {
     assert.equal(descriptor.pattern.test(legacyName), false, legacyName);
   }
+});
+
+test("webview runtime descriptor targets the official app bootstrap", () => {
+  const descriptor = featurePatches.find((patch) => patch.id === "webview-runtime");
+  assert.ok(descriptor);
+  assert.equal(descriptor.pattern.test("app-initial-Bd3Z1bES.js"), true);
+  assert.equal(descriptor.pattern.test("local-conversation-turn-BSHPwQLO.js"), false);
 });
 
 test("assistant runtime descriptor fails soft and atomically when the current render contract drifts", () => {
@@ -1032,7 +1040,7 @@ test("assistant runtime descriptor fails soft and atomically when the current re
     fs.mkdirSync(assetsDir, { recursive: true });
     const assetPath = path.join(
       assetsDir,
-      "app-initial-BHB6SClA.js",
+      "local-conversation-turn-BSHPwQLO.js",
     );
     const source = "console.log(`assistant render contract moved`);";
     fs.writeFileSync(assetPath, source);
@@ -1060,7 +1068,7 @@ test("assistant runtime descriptor reports applied then already-applied for the 
     fs.mkdirSync(assetsDir, { recursive: true });
     const assetPath = path.join(
       assetsDir,
-      "app-initial-BHB6SClA.js",
+      "local-conversation-turn-BSHPwQLO.js",
     );
     fs.writeFileSync(
       assetPath,
@@ -1078,7 +1086,7 @@ test("assistant runtime descriptor reports applied then already-applied for the 
 
     const patched = fs.readFileSync(assetPath, "utf8");
     assert.match(patched, /codex-linux-read-aloud-button/);
-    assert.match(patched, /codexLinuxReadAloudVersion/);
+    assert.doesNotMatch(patched, /codexLinuxReadAloudVersion/);
     assert.equal(firstReport.patches[0].status, "applied");
     assert.equal(secondReport.patches[0].status, "already-applied");
   } finally {
@@ -1132,6 +1140,51 @@ test("general settings patch exports read aloud page without rendering it in Gen
     /children:\[S,C,w,T,\(0,\$\.jsx\)\(codexLinuxReadAloudSettingsRow,\{\}\),D,O,k,A,j,M,N,P,L\]/,
   );
   assert.match(patched, /children:\[S,C,w,T,D,O,k,A,j,M,N,P,L\]/);
+});
+
+test("general settings patch inserts controls into the official Linux general settings bundle", () => {
+  const source = [
+    "var ei=t(f(),1),$=rn();",
+    "function Hi(){let e=Fe(Ht);return(0,$.jsx)(dt,{title:(0,$.jsx)(Je,{slug:`general-settings`}),children:e?(0,$.jsx)(Ui,{}):null})}",
+    "function Ui(){return(0,$.jsxs)(A,{children:[null,(0,$.jsx)(Ii,{}),n&&i?(0,$.jsx)(xi,{}):null]})}",
+    "function Ea(){return null}",
+    "export{Hi as i,Ea as r};",
+  ].join("");
+  const patched = twice(applyGeneralSettingsPatch, source);
+
+  assert.match(patched, /codexLinuxReadAloudSettingsAliasesV2/);
+  assert.match(patched, /\(0,\$\.jsx\)\(codexLinuxReadAloudSettingsRow,\{\}\),\(0,\$\.jsx\)\(Ii,\{\}\)/);
+  assert.match(patched, /codexLinuxReadAloudGetSetting/);
+  assert.match(patched, /codexLinuxReadAloudSetSetting/);
+  assert.match(patched, /codexLinuxReadAloudSettingsPage as ReadAloudSettings/);
+});
+
+test("official settings have the runtime before any conversation chunk loads", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-read-aloud-official-settings-"));
+  try {
+    const assets = path.join(root, "webview", "assets");
+    fs.mkdirSync(assets, { recursive: true });
+    const appInitial = path.join(assets, "app-initial-Bd3Z1bES.js");
+    fs.writeFileSync(appInitial, "console.log(`official bootstrap`);");
+    const runtimeDescriptor = featurePatches.find((patch) => patch.id === "webview-runtime");
+    const report = createPatchReport();
+    applyWebviewAssetPatchDescriptors(
+      root,
+      normalizePatchDescriptors([
+        { ...runtimeDescriptor, featureId: "read-aloud", sourceKind: "feature" },
+      ]),
+      {},
+      report,
+    );
+
+    const patched = fs.readFileSync(appInitial, "utf8");
+    assert.match(patched, /codexLinuxReadAloudGetSetting/);
+    assert.match(patched, /codexLinuxReadAloudSetSetting/);
+    assert.equal(report.patches[0].status, "applied");
+    assert.equal(fs.existsSync(path.join(assets, "local-conversation-turn-BSHPwQLO.js")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("general settings patch upgrades and removes an older injected General row", () => {

@@ -18,17 +18,23 @@ Resolve and verify the latest signed stable package for the host architecture:
 ./install.sh
 ```
 
-Use an explicit already-downloaded package:
+This is a Linux `.deb`-only source pipeline. Retired source inputs and
+compatibility variables are rejected rather than emulated; the official
+Electron runtime and native modules are preserved directly.
+
+Use an explicit already-downloaded package that you trust:
 
 ```bash
 ./install.sh /path/to/chatgpt_<version>_<arch>.deb
 UPSTREAM_DEB=/path/to/chatgpt_<version>_<arch>.deb make build-app
 ```
 
-The explicit package is still validated for package name, version,
-architecture, digest when supplied by metadata, and required payload. Source
-package formats from the retired build architecture are rejected with a clear
-error and have no compatibility fallback.
+The explicit package is validated for package name, version, architecture, and
+required payload, and its SHA-256 is recorded in build metadata. Supplying a
+local file deliberately skips signed repository discovery, so the caller is
+responsible for its provenance. Source package formats from the retired build
+architecture are rejected with a clear error and have no compatibility
+fallback.
 
 Inspection writes reports without promoting an app:
 
@@ -61,9 +67,15 @@ make pacman
 make appimage
 ```
 
+For an installed native build, `make setup-native` is only the optional-feature
+wizard, `make install-native` performs build/package/install, and
+`make bootstrap-native` first installs build dependencies and then performs the
+same installation flow.
+
 Shared payload logic lives in `scripts/lib/package-common.sh`. Native packages
 install to `/opt/codex-desktop`, provide `/usr/bin/codex-desktop`, install a
-separate desktop entry, and may include the updater service/update-builder.
+separate **ChatGPT Community** desktop entry and community-marked icon, and may
+include the updater service/update-builder.
 Their dependency declarations correspond to libraries required by the official
 ELF runtime. They do not install OpenAI's repository configuration.
 
@@ -79,8 +91,9 @@ of an insecure automatic fallback.
 
 `packaging/update-builder/` contains only source verification/extraction,
 feature selection/descriptors/resources, the ASAR toolchain, package templates,
-and required build helpers. It excludes the full repository and disabled
-features, and never contains an app-runtime Node installation.
+required build helpers, and already staged release executables for enabled
+native features. It excludes the full repository, Cargo workspaces, and
+disabled features, and never contains an app-runtime Node installation.
 
 ## Cross-format validation
 

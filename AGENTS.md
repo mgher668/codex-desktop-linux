@@ -19,6 +19,8 @@ manager that rebuilds from the signed stable APT repository.
   byte-for-byte.
 - Keep the output identity `codex-desktop` under `/opt/codex-desktop`; do not
   install the upstream APT source, key, package identity, or maintainer scripts.
+- Keep the user-facing desktop name **ChatGPT Community** and its distinct
+  community icon; `ChatGPT` without the qualifier identifies the upstream app.
 - The default core patch registry is empty. A core patch requires a reproduced
   launch/work blocker and a required regression test.
 - Experimental or workflow-specific behavior belongs in `linux-features/` and
@@ -56,6 +58,8 @@ feature `stage.sh`.
   windows, and lifecycle.
 - The custom and official packages may coexist, but both use the upstream
   `Codex` user profile and must not be run concurrently.
+- Legacy bundled Browser/Chrome cache migration must be narrow and
+  fingerprinted: never wipe arbitrary plugin caches or user-authored plugins.
 - AppImage never adds `--no-sandbox` automatically. Native packages adapt the
   upstream AppArmor policy to `/opt/codex-desktop/ChatGPT`.
 - Candidate promotion is transactional. Build while running is allowed;
@@ -64,6 +68,7 @@ feature `stage.sh`.
 ## Generated state
 
 Generated/local paths include `codex-app/`, `codex-app-next/`,
+`codex-app.backup-*`,
 `.codex-app.candidate-*`, `dist/`, `dist-next/`, `target/`,
 `linux-features/features.json`, `linux-features/local/`, updater state under
 XDG config/state/cache, and launcher state under XDG state/cache.
@@ -80,6 +85,12 @@ make rpm
 make pacman
 make appimage
 ```
+
+`make setup-native` only configures optional features. `make install-native`
+builds, packages, and installs for the current distribution.
+`make bootstrap-native` installs build dependencies first and then performs the
+same native installation. A local `UPSTREAM_DEB` is structural input, not a
+replacement trust root for the signed repository.
 
 Run the relevant subset, and use `./scripts/ci-local.sh all` for broad changes:
 

@@ -60,3 +60,9 @@ list, this feature does not add another proxy server or authentication target.
 There is no special parser for `electron-flags.conf`; persistent launch flags,
 feature-provided Electron args, and command-line passthrough arguments are all
 loaded into the same Electron argument list before this feature hook runs.
+
+Validate the launcher and Electron bridge behavior with:
+
+```bash
+node --test linux-features/authenticated-proxy/test.js
+```

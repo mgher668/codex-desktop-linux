@@ -16,7 +16,7 @@ pub struct BuildArtifacts {
     pub package_path: PathBuf,
 }
 
-const BUNDLE_ENTRIES: &[&str] = &[
+const REQUIRED_BUNDLE_ENTRIES: &[&str] = &[
     "install.sh",
     "launcher",
     "scripts/build-deb.sh",
@@ -28,6 +28,12 @@ const BUNDLE_ENTRIES: &[&str] = &[
     "packaging/linux",
     "assets",
     "linux-features",
+];
+
+const OPTIONAL_BUNDLE_ENTRIES: &[&str] = &[
+    "target",
+    "global-dictation-linux",
+    "plugins",
 ];
 
 pub async fn build_update(
@@ -108,10 +114,16 @@ fn safe_component(value: &str) -> String {
 
 fn copy_builder_bundle(source: &Path, destination: &Path) -> Result<()> {
     fs::create_dir_all(destination)?;
-    for relative in BUNDLE_ENTRIES {
+    for relative in REQUIRED_BUNDLE_ENTRIES {
         let from = source.join(relative);
         anyhow::ensure!(from.exists(), "update-builder is missing {relative}");
         copy_path(&from, &destination.join(relative))?;
+    }
+    for relative in OPTIONAL_BUNDLE_ENTRIES {
+        let from = source.join(relative);
+        if from.exists() {
+            copy_path(&from, &destination.join(relative))?;
+        }
     }
     Ok(())
 }
@@ -175,5 +187,39 @@ mod tests {
     #[test]
     fn workspace_component_never_contains_separators() {
         assert_eq!(safe_component("26.1/../../x"), "26.1_.._.._x");
+    }
+
+    #[test]
+    fn builder_bundle_copies_optional_prebuilt_artifacts_without_requiring_them() {
+        let root = std::env::temp_dir().join(format!(
+            "codex-builder-bundle-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos(),
+        ));
+        let source = root.join("source");
+        let empty_destination = root.join("empty");
+        for relative in REQUIRED_BUNDLE_ENTRIES {
+            let path = source.join(relative);
+            if relative.contains('.') || relative.ends_with(".sh") || relative.ends_with(".js") {
+                fs::create_dir_all(path.parent().expect("required entry parent")).expect("parent");
+                fs::write(path, "fixture").expect("required file");
+            } else {
+                fs::create_dir_all(path).expect("required directory");
+            }
+        }
+        copy_builder_bundle(&source, &empty_destination).expect("feature-free bundle copy");
+        assert!(!empty_destination.join("target").exists());
+        assert!(!empty_destination.join("global-dictation-linux").exists());
+
+        let helper = source.join("target/release/helper");
+        fs::create_dir_all(helper.parent().expect("helper parent")).expect("helper directory");
+        fs::write(&helper, "binary").expect("helper");
+        let enabled_destination = root.join("enabled");
+        copy_builder_bundle(&source, &enabled_destination).expect("feature bundle copy");
+        assert_eq!(fs::read_to_string(enabled_destination.join("target/release/helper")).expect("copied helper"), "binary");
+        fs::remove_dir_all(root).expect("cleanup");
     }
 }

@@ -1,4 +1,4 @@
-# Codex Desktop for Linux
+# ChatGPT Community for Linux
 
 `codex-desktop` is a custom, multi-format distribution of OpenAI's official
 Linux ChatGPT desktop application. It verifies and repackages the signed
@@ -8,6 +8,9 @@ packages, AppImage, Nix, and transactional updates.
 The custom build appears in application menus as **ChatGPT Community** and uses
 an icon marked with a blue `C`, while its package and executable identity remain
 `codex-desktop`.
+
+OpenAI's signed Linux `.deb` is the only upstream source. The official Electron
+runtime and native modules are reused directly rather than reconstructed.
 
 The project preserves the complete upstream runtime instead of reconstructing
 the application. With no optional
@@ -22,17 +25,27 @@ bash scripts/install-deps.sh
 make install-native
 ```
 
+To choose optional features interactively before installing, run
+`make setup-native`, then `make install-native`. To install dependencies, build,
+package, and install in one command, use `make bootstrap-native`.
+`make install-native` builds the release helpers required by the enabled local
+features before consuming the official package; updater rebuilds reuse those
+packaged binaries and never run Cargo.
+
 `install.sh` resolves the current `amd64` or `arm64` package through OpenAI's
-signed stable APT metadata. To build from an already downloaded package:
+signed stable APT metadata. To build from an already downloaded package that
+you trust:
 
 ```bash
-UPSTREAM_DEB=/path/to/chatgpt_26.803.81509_amd64.deb make build-app
+UPSTREAM_DEB=/path/to/chatgpt_<version>_<arch>.deb make build-app
 ```
 
 The verifier checks the pinned repository-key fingerprint, the signed index,
 the architecture-specific `Packages` digest, package metadata, package digest,
 and required Linux payload. It extracts only the data archive and never runs
-the upstream package scripts.
+the upstream package scripts. An explicitly supplied local `.deb` is checked
+for package shape and its SHA-256 is recorded, but its provenance is the
+caller's responsibility because repository discovery is intentionally skipped.
 
 ## Outputs
 
@@ -57,13 +70,16 @@ packages install an AppArmor policy adapted to the custom executable path.
 
 ## Optional Linux features
 
-All features are disabled by default. Copy the example config and select only
-what you need:
+All features are disabled by default. Use the wizard:
 
 ```bash
-cp linux-features/features.example.json linux-features/features.json
 make setup-native
+make install-native
 ```
+
+For manual configuration, copy `linux-features/features.example.json` to the
+gitignored `linux-features/features.json`, edit the enabled IDs, and run
+`make install-native`.
 
 Enabled features may stage resources, set environment variables, add launcher
 hooks, package helpers, or patch a temporary ASAR copy. A feature patch drift
@@ -76,6 +92,11 @@ all extensions remain opt-in.
 
 See [Linux features](docs/linux-features-architecture.md) and the README beside
 each feature descriptor.
+
+The first Community launch after upgrading from the former Linux port also
+repairs only the known legacy Browser and Chrome bundled-plugin caches. If a
+browser integration was already loaded, fully exit every ChatGPT process and
+restart ChatGPT Community. See [troubleshooting](docs/troubleshooting.md).
 
 ## Updates
 

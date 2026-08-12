@@ -423,6 +423,10 @@ Current Linux slice status:
    add richer compositor-specific capture backends behind the same bundle
    contract.
 
+These phases are feature-development history, not build-source instructions.
+Every implementation and test uses the current signed official Linux `.deb` as
+its upstream baseline; macOS bundles are compatibility references only.
+
 ## Phase 1 Conclusion
 
 Phase 1 is successful if Linux can produce a recording bundle, draft a skill

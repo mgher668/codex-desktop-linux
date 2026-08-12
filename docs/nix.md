@@ -4,6 +4,9 @@ The flake downloads the official architecture-specific Linux package pinned in
 `nix/upstream-linux-packages.json`, verifies its hash through Nix, extracts the
 ELF payload, and wraps it with the required Nix libraries.
 
+These inputs are official Linux `.deb` files. Nix wraps the official runtime
+directly instead of replacing Electron or rebuilding upstream native modules.
+
 ```bash
 nix run github:ilysenko/codex-desktop-linux
 nix build .#codex-desktop
@@ -42,5 +45,6 @@ nix flake check
 nix build .#codex-desktop
 ```
 
-Nix outputs keep the custom desktop identity and shared upstream `Codex` user
-profile. Do not run the Nix and official applications concurrently.
+Nix outputs keep the **ChatGPT Community** desktop identity and shared upstream
+`Codex` user profile. Do not run the Nix and official applications
+concurrently.

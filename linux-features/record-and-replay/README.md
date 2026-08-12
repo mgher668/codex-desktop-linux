@@ -26,9 +26,10 @@ It is disabled by default. Enable it in `linux-features/features.json`:
 The project release builds `codex-record-replay-linux` once and copies it into
 `resources/native/`, the staged plugin
 `bin/codex-record-replay-linux`, and the official-shaped plugin helper alias
-`bin/SkyLinuxComputerUseClient`. Builds without a Rust toolchain can set
-Local builds may set `CODEX_RECORD_REPLAY_LINUX_SOURCE` to an executable prebuilt
-`codex-record-replay-linux` binary.
+`bin/SkyLinuxComputerUseClient`. `make install-native` performs that release
+build once before staging. Direct `./install.sh` builds may set
+`CODEX_RECORD_REPLAY_LINUX_SOURCE` to an executable prebuilt binary. Updater
+rebuilds reuse the packaged artifact and never invoke Cargo.
 
 ## Behavior
 
@@ -122,3 +123,7 @@ The Rust helper also exposes MCP tools `skysight_start`,
 
 All helper invocations use `execFile` with fixed command shapes. The bridge does
 not expose a shell or arbitrary argv surface.
+
+```bash
+node --test linux-features/record-and-replay/test.js
+```

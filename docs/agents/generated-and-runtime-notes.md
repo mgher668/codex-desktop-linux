@@ -2,7 +2,8 @@
 
 Do not edit or commit generated application/package state:
 
-- `codex-app/`, `codex-app-next/`, `.codex-app.candidate-*`
+- `codex-app/`, `codex-app-next/`, `codex-app.backup-*`,
+  `.codex-app.candidate-*`
 - `codex-*-app/`, `dist/`, `dist-next/`, `target/`
 - `linux-features/features.json`, `linux-features/local/`
 - staged feature manifests and build/patch reports
@@ -19,3 +20,5 @@ report and staged feature manifest.
 
 Updater candidates are siblings of the active tree and are promoted atomically.
 Do not manually rename an active/candidate pair or delete its recovery journal.
+An old root-owned `codex-app.backup-*` is disposable only after verifying it is
+not the active tree or the updater's recorded rollback artifact.

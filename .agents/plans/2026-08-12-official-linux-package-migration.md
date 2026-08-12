@@ -30,6 +30,8 @@ may be backfilled by the next milestone commit).
 | 4 | Signed-package updater and state migration | complete | 48 Rust tests; Clippy; signed metadata-only probe; updater-enabled deb payload | `47f6d69d` |
 | 5 | Nix and signed-package CI/watchdog | complete | flake evaluation + Nix package check; signed full amd64/arm64 package verification; cross-arch clean ASAR equality | `eaf34e8e` |
 | 6 | Documentation and final repository cleanup | complete | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all`; forbidden-reference scan; `git diff --check` | `916a8337` |
+| 7 | Community identity and legacy bundled-plugin handoff | complete | distinct ChatGPT Community desktop/icon; Browser and Chrome official clients connect after cache migration; newest native package is selected for installation | `43e2cb2b`, `ec281e0a`, `f1699543` |
+| 8 | Documentation, optional-feature, and package-contract re-audit | complete | 29 retained manifests default-off; four nonfunctional/redundant IDs retired; prebuilt native artifacts in update-builder; raw-official feature, package metadata/architecture, Node/Rust/smoke checks | this commit |
 
 ## Build, package, updater, CI, and documentation checklist
 
@@ -85,6 +87,10 @@ may be backfilled by the next milestone commit).
   troubleshooting, feature architecture, validation playbook, and `AGENTS.md`.
 - [x] Explain official `chatgpt` versus custom `codex-desktop` coexistence.
 - [x] Explain shared `Codex` profile and concurrent-launch restriction.
+- [x] Name the custom desktop **ChatGPT Community** while retaining the
+  `codex-desktop` package/bin/path identity.
+- [x] Document the narrow Browser/Chrome legacy-cache migration and safe manual
+  recovery without deleting arbitrary or user-authored plugins.
 - [x] Document feature retirement and zero default ASAR patches.
 - [x] Retain DMG history only in CHANGELOG and this migration record.
 
@@ -198,8 +204,8 @@ or new feature must also keep its adjacent README and feature-local tests.
 | `authenticated-proxy` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
 | `codex-micro` | simplify; remove node-hid/native rebuild | complete — retained feature tests pass against the official-bundle contracts |
 | `codex-wrapper-updater` | retire | complete — directory removed; retired-ID compatibility test passes |
-| `conversation-delete` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
-| `conversation-mode` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
+| `conversation-delete` | retire after official-bundle audit | complete — all 12 current UI/cache anchors drifted; zero behavior was removed instead of shipping a false opt-in |
+| `conversation-mode` | retire after official-bundle audit | complete — three of four descriptors drifted and the voice loop was nonfunctional on the official ASAR |
 | `copilot-reasoning-effort` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
 | `deferred-update-build` | retire | complete — directory removed; retired-ID compatibility test passes |
 | `directory-only-working-tree-watch` | audit on official runtime | retained opt-in — official Parcel route regression tests still require the bounded Watchbound adapter |
@@ -221,10 +227,10 @@ or new feature must also keep its adjacent README and feature-local tests.
 | `remote-mobile-control` | audit official mobile recovery | retained opt-in — official single-instance lifecycle is reused; daemon/recovery regression tests pass |
 | `shallow-repository-watches` | audit Parcel watcher | retained opt-in — official Linux recursive Parcel route regression remains covered as alternative to Watchbound |
 | `shared-app-server-socket` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
-| `ssh-command-wrapper` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
+| `ssh-command-wrapper` | retire after official-bundle audit | complete — both main/webview atomic contracts drifted; zero behavior was removed |
 | `thorium-chrome-plugin` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
 | `ui-tweaks` | retain; use official icons/metadata | complete — retained feature tests pass against the official-bundle contracts |
-| `x11-ewmh-computer-use` | retain and retarget | complete — retained feature tests pass against the official-bundle contracts |
+| `x11-ewmh-computer-use` | retire as redundant architecture-limited surface | complete — generic X11/EWMH stays in `computer-use-linux`; x86-only duplicate removed |
 
 ### New disabled-by-default feature destinations
 
@@ -256,3 +262,6 @@ or new feature must also keep its adjacent README and feature-local tests.
 | 2026-08-12 | Dependency bootstrap | `CI_SKIP_PULL=1 ./scripts/ci-local.sh install-deps` | Ubuntu 22.04, Ubuntu 24.04 and Debian 12 pass with Node 24.19.0 | `916a8337` |
 | 2026-08-12 | Final matrix | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all` | exit 0; core 777 tests (776 pass, 1 skip), deb/RPM/pacman/Nix, dependency matrix and signed upstream build all pass | `916a8337` |
 | 2026-08-12 | Final source audit | forbidden-reference `rg`, shell/JS/JSON syntax, feature README inventory, `git diff --check` | no active legacy-source/runtime paths outside intentional rejection tests and migration history; all static checks pass | `916a8337` |
+| 2026-08-12 | Optional-feature re-audit | `node scripts/ci/verify-official-linux-features.js <official-26.803.81509-ASAR>` | 27 ASAR-owning features pass against the raw official bundle; 29 retained manifests are default-off | this commit |
+| 2026-08-12 | Retained feature/framework suite | `node --test scripts/patch-linux-window-ui.test.js scripts/lib/linux-features.test.js scripts/lib/package-common.test.js linux-features/*/test.js` | 698 tests: 697 pass, 1 intentional skip, 0 fail | this commit |
+| 2026-08-12 | Updater after minimal-builder audit | `cargo test -p codex-update-manager --locked`; `cargo clippy -p codex-update-manager --locked --all-targets -- -D warnings` | 49/49 pass; Clippy clean; enabled native feature templates and binaries are retained without Cargo workspaces | this commit |

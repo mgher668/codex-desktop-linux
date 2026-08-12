@@ -1,6 +1,8 @@
 name: Update official Linux package pins
 
 on:
+  schedule:
+    - cron: '15 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -24,12 +26,20 @@ jobs:
           node-version: 24
       - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
       - name: Refresh pins through signed metadata
-        run: node scripts/automation/upstream-linux-package-watchdog/watchdog.js --write --json
+        id: pins
+        run: |
+          set -euo pipefail
+          result="$(node scripts/automation/upstream-linux-package-watchdog/watchdog.js --write --json)"
+          printf '%s\n' "$result"
+          changed="$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(String(value.changed))' "$result")"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
       - name: Evaluate and build Nix baseline
+        if: steps.pins.outputs.changed == 'true'
         run: |
           nix flake check --no-build
           nix build .#codex-desktop
       - name: Open or update refresh pull request
+        if: steps.pins.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: codex/official-linux-package-pins

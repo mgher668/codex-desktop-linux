@@ -4,6 +4,7 @@
 const {
   createPatchReport,
   criticalFailuresFromReport,
+  enabledFeatureFailuresFromReport,
   writePatchReport,
 } = require("./lib/patch-report.js");
 const {
@@ -67,14 +68,19 @@ function main() {
   }
 
   if (enforceCritical) {
-    const failures = criticalFailuresFromReport(report);
+    const failures = [
+      ...criticalFailuresFromReport(report),
+      ...enabledFeatureFailuresFromReport(report),
+    ].filter((failure, index, all) =>
+      all.findIndex((candidate) => candidate.name === failure.name && candidate.status === failure.status) === index,
+    );
     if (failures.length > 0) {
       console.error(`Critical patch failures (${failures.length}):`);
       for (const failure of failures) {
         console.error(`  - ${failure.name} (${failure.status})${failure.reason ? `: ${failure.reason}` : ""}`);
       }
       console.error(
-        "Aborting: these patches are required for a working Linux app. " +
+        "Aborting: required patches or explicitly enabled feature patches drifted. " +
           "Set CODEX_ENFORCE_CRITICAL_PATCHES=0 to bypass (emergency builds only).",
       );
       process.exit(1);

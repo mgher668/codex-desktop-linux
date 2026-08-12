@@ -18,9 +18,13 @@ const LEGACY_FEATURE_ID_ALIASES = new Map([
 // survive a removal without making typos or arbitrary unknown ids fail open.
 const RETIRED_FEATURE_IDS = new Set([
   "codex-wrapper-updater",
+  "conversation-delete",
+  "conversation-mode",
   "deferred-update-build",
   "example-feature",
   "open-target-discovery",
+  "ssh-command-wrapper",
+  "x11-ewmh-computer-use",
 ]);
 
 const RUNTIME_HOOK_DIRS = {

@@ -27,7 +27,17 @@ test("known retired feature ids are ignored while arbitrary unknown ids fail", (
   fs.mkdirSync(featuresRoot);
   const configPath = path.join(featuresRoot, "features.json");
   fs.writeFileSync(configPath, JSON.stringify({
-    enabled: ["codex-wrapper-updater", "deferred-update-build", "example-feature", "open-target-discovery", "zed-opener"],
+    enabled: [
+      "codex-wrapper-updater",
+      "conversation-delete",
+      "conversation-mode",
+      "deferred-update-build",
+      "example-feature",
+      "open-target-discovery",
+      "ssh-command-wrapper",
+      "x11-ewmh-computer-use",
+      "zed-opener",
+    ],
     settings: { "open-target-discovery": { stale: true } },
   }));
 

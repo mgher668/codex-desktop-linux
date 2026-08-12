@@ -4,6 +4,9 @@
 updates the custom distribution without transferring ownership to the official
 `chatgpt` package.
 
+It updates the `codex-desktop` package shown as **ChatGPT Community**. It does
+not install, remove, or update OpenAI's separate `chatgpt` package.
+
 ## Release discovery
 
 The service verifies OpenAI's signed stable `InRelease`, the digest of the
@@ -26,7 +29,9 @@ tools but does not install them in the application runtime.
 
 Enabled feature drift rejects the candidate. Disabled features are neither
 loaded nor probed. Native helper binaries belong to the project release package
-and are not rebuilt for each upstream refresh.
+and are not rebuilt for each upstream refresh. The minimal update-builder
+copies those already staged release executables into the candidate workspace;
+it contains no Cargo workspace.
 
 ## Promotion and rollback
 

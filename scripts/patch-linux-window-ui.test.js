@@ -2,6 +2,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -43,4 +44,27 @@ test("empty registry leaves an extracted official-style app unchanged", (t) => {
   });
   assert.deepEqual(report.patches, []);
   for (const [filePath, bytes] of before) assert.deepEqual(fs.readFileSync(filePath), bytes);
+});
+
+test("CLI rejects drift in an explicitly enabled feature", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-enabled-feature-drift-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, ".vite", "build"), { recursive: true });
+  fs.mkdirSync(path.join(root, "webview", "assets"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".vite", "build", "main-fixture.js"), "const main=true;\n");
+  fs.writeFileSync(path.join(root, "webview", "assets", "app-initial-fixture.js"), "const webview=true;\n");
+  const config = path.join(root, "features.json");
+  const report = path.join(root, "report.json");
+  fs.writeFileSync(config, '{"enabled":["frameless-titlebar"]}\n');
+
+  const result = childProcess.spawnSync(
+    process.execPath,
+    [path.join(__dirname, "patch-linux-window-ui.js"), "--report-json", report, "--enforce-critical", root],
+    {
+      encoding: "utf8",
+      env: { ...process.env, CODEX_LINUX_FEATURES_CONFIG: config },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /explicitly enabled feature patches drifted/);
 });

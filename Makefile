@@ -34,10 +34,10 @@ esac; \
 printf '%s\n' "$$format"
 endef
 
-.PHONY: help check test ci-pr ci-all build-updater maybe-build-updater update rebuild rebuild-install inspect-upstream build-app build-app-fresh setup-native bootstrap-native install-native update-native rebuild-next run-app deb rpm pacman appimage package install service-enable service-status clean-dist clean-state
+.PHONY: help check test ci-pr ci-all build-updater maybe-build-updater build-native-feature-helpers update rebuild rebuild-install inspect-upstream build-app build-app-fresh setup-native bootstrap-native install-native update-native rebuild-next run-app deb rpm pacman appimage package install service-enable service-status clean-dist clean-state
 
 help:
-	@printf '\nCodex Desktop from the official OpenAI Linux package\n\n'
+	@printf '\nChatGPT Community from the official OpenAI Linux package\n\n'
 	@printf '  %-20s %s\n' 'make build-app' 'Build codex-app/ from the signed stable index'
 	@printf '  %-20s %s\n' 'make rebuild' 'Build a side-by-side candidate'
 	@printf '  %-20s %s\n' 'make rebuild-install' 'Build and transactionally replace codex-app/'
@@ -68,6 +68,17 @@ build-updater:
 maybe-build-updater:
 	@case "$(PACKAGE_WITH_UPDATER)" in 0|false|no|off) echo '[make] updater omitted' ;; *) $(MAKE) build-updater ;; esac
 
+build-native-feature-helpers:
+	@set -e; config="$${CODEX_LINUX_FEATURES_CONFIG:-linux-features/features.json}"; \
+	[ -f "$$config" ] || config=linux-features/features.example.json; \
+	enabled="$$(CODEX_LINUX_FEATURES_CONFIG="$$config" node scripts/lib/linux-features.js --enabled)"; \
+	has() { printf '%s\n' "$$enabled" | grep -Fxq "$$1"; }; \
+	if has computer-use-linux; then cargo build $(CARGO_JOBS_ARG) --release -p codex-computer-use-linux --bin codex-computer-use-linux --bin codex-computer-use-cosmic; fi; \
+	if has global-dictation; then cargo build $(CARGO_JOBS_ARG) --release --manifest-path global-dictation-linux/Cargo.toml --target-dir global-dictation-linux/target; fi; \
+	if has read-aloud-mcp; then cargo build $(CARGO_JOBS_ARG) --release -p codex-read-aloud-linux; fi; \
+	if has record-and-replay; then cargo build $(CARGO_JOBS_ARG) --release -p codex-record-replay-linux; fi; \
+	if has mcp-helper-reaper; then cargo build $(CARGO_JOBS_ARG) --release --manifest-path linux-features/mcp-helper-reaper/reaper/Cargo.toml; fi
+
 update: rebuild-install
 
 rebuild:
@@ -92,6 +103,7 @@ bootstrap-native:
 	PATH="$$HOME/.cargo/bin:$$PATH" $(MAKE) install-native
 
 install-native:
+	$(MAKE) build-native-feature-helpers
 	$(MAKE) build-app
 	$(MAKE) package
 	$(MAKE) install

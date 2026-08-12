@@ -27,6 +27,52 @@ ensure_app_layout() {
     [ -x "$APP_DIR/resources/codex" ] || error "Missing bundled Codex CLI: $APP_DIR/resources/codex. Run ./install.sh first."
 }
 
+upstream_linux_control_field() {
+    local field_name="$1"
+    local control_file="$APP_DIR/.codex-linux/upstream-package/control"
+    local node_bin
+
+    ensure_file_exists "$control_file" "official Linux package control metadata"
+    node_bin="$(package_node_binary)"
+    "$node_bin" - "$control_file" "$field_name" <<'NODE'
+const fs = require("node:fs");
+const [controlPath, fieldName] = process.argv.slice(2);
+const fields = new Map();
+let current = null;
+for (const line of fs.readFileSync(controlPath, "utf8").split(/\r?\n/)) {
+  if (/^[ \t]/.test(line) && current != null) {
+    fields.set(current, `${fields.get(current)} ${line.trim()}`);
+    continue;
+  }
+  const separator = line.indexOf(":");
+  if (separator < 1) {
+    current = null;
+    continue;
+  }
+  current = line.slice(0, separator);
+  fields.set(current, line.slice(separator + 1).trim());
+}
+process.stdout.write(fields.get(fieldName) ?? "");
+NODE
+}
+
+official_payload_deb_architecture() {
+    local architecture
+    architecture="$(upstream_linux_control_field Architecture)"
+    case "$architecture" in
+        amd64|arm64) printf '%s\n' "$architecture" ;;
+        *) error "Unsupported official payload architecture '${architecture:-missing}'; expected amd64 or arm64" ;;
+    esac
+}
+
+assert_official_payload_architecture() {
+    local host_architecture="$1"
+    local payload_architecture
+    payload_architecture="$(official_payload_deb_architecture)"
+    [ "$payload_architecture" = "$host_architecture" ] || \
+        error "Official payload architecture is '$payload_architecture', but this package builder targets '$host_architecture'"
+}
+
 sed_escape_replacement() {
     printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
 }
@@ -92,17 +138,6 @@ fs.writeFileSync(targetPath, `${JSON.stringify(config, null, 2)}\n`);
 NODE
 }
 
-stage_update_builder_global_dictation_source() {
-    local update_builder_root="$1"
-    local source_root="$REPO_DIR/global-dictation-linux"
-    local target_root="$update_builder_root/global-dictation-linux"
-
-    mkdir -p "$target_root/src"
-    cp "$source_root/Cargo.toml" "$target_root/Cargo.toml"
-    cp "$source_root/Cargo.lock" "$target_root/Cargo.lock"
-    cp -R "$source_root/src/." "$target_root/src/"
-}
-
 linux_features_root_path() {
     local helper="$REPO_DIR/scripts/lib/linux-features.js"
     local node_bin
@@ -129,6 +164,32 @@ stage_update_builder_linux_features_tree() {
         [ -n "$feature_id" ] || continue
         [ -d "$source_root/$feature_id" ] || error "Missing enabled Linux feature: $feature_id"
         cp -a "$source_root/$feature_id" "$target/$feature_id"
+        find "$target/$feature_id" -type d -name target -prune -exec rm -rf {} +
+        if [ "$feature_id" = "mcp-helper-reaper" ]; then
+            rm -rf \
+                "$target/$feature_id/reaper/src" \
+                "$target/$feature_id/reaper/Cargo.toml" \
+                "$target/$feature_id/reaper/Cargo.lock"
+        fi
+    done < <("$(package_node_binary)" "$REPO_DIR/scripts/lib/linux-features.js" --enabled)
+}
+
+stage_update_builder_enabled_plugin_templates() {
+    local update_builder_root="$1"
+    local feature_id
+    local plugin_id
+
+    while IFS= read -r feature_id; do
+        case "$feature_id" in
+            computer-use-linux) plugin_id="computer-use" ;;
+            read-aloud-mcp) plugin_id="read-aloud" ;;
+            *) continue ;;
+        esac
+        local source="$REPO_DIR/plugins/openai-bundled/plugins/$plugin_id"
+        local target="$update_builder_root/plugins/openai-bundled/plugins/$plugin_id"
+        [ -d "$source" ] || error "Missing enabled Linux feature plugin template: $source"
+        mkdir -p "$(dirname "$target")"
+        cp -a "$source" "$target"
     done < <("$(package_node_binary)" "$REPO_DIR/scripts/lib/linux-features.js" --enabled)
 }
 
@@ -887,29 +948,65 @@ stage_update_builder_bundle() {
         "$update_builder_root/assets/openai-codex-linux-repository-key.gpg.base64"
 
     stage_update_builder_linux_features_tree "$update_builder_root"
+    stage_update_builder_enabled_plugin_templates "$update_builder_root"
     stage_update_builder_linux_features_config "$update_builder_root"
-    stage_enabled_native_feature_consumers "$update_builder_root"
+    stage_enabled_native_feature_artifacts "$update_builder_root"
     stage_update_builder_source_info "$update_builder_root"
     write_update_builder_manifest "$update_builder_root"
 }
 
-stage_enabled_native_feature_consumers() {
+stage_update_builder_native_artifact() {
+    local source="$1"
+    local target="$2"
+    local label="$3"
+
+    [ -x "$source" ] || error "Missing staged native feature artifact for $label: $source"
+    mkdir -p "$(dirname "$target")"
+    install -m 0755 "$source" "$target"
+}
+
+stage_enabled_native_feature_artifacts() {
     local update_builder_root="$1"
     local feature_id
-    local consumer
 
     while IFS= read -r feature_id; do
         case "$feature_id" in
-            computer-use-linux|x11-ewmh-computer-use) consumer="computer-use-linux" ;;
-            global-dictation) consumer="global-dictation-linux" ;;
-            mcp-helper-reaper) consumer="linux-features/mcp-helper-reaper/reaper" ;;
-            read-aloud|read-aloud-mcp) consumer="read-aloud-linux" ;;
-            record-and-replay) consumer="record-replay-linux" ;;
+            computer-use-linux)
+                stage_update_builder_native_artifact \
+                    "$APP_DIR/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-linux" \
+                    "$update_builder_root/target/release/codex-computer-use-linux" \
+                    "$feature_id backend"
+                stage_update_builder_native_artifact \
+                    "$APP_DIR/resources/plugins/openai-bundled/plugins/computer-use/bin/codex-computer-use-cosmic" \
+                    "$update_builder_root/target/release/codex-computer-use-cosmic" \
+                    "$feature_id COSMIC helper"
+                ;;
+            global-dictation)
+                stage_update_builder_native_artifact \
+                    "$APP_DIR/resources/native/codex-global-dictation-linux" \
+                    "$update_builder_root/global-dictation-linux/target/release/codex-global-dictation-linux" \
+                    "$feature_id helper"
+                ;;
+            mcp-helper-reaper)
+                stage_update_builder_native_artifact \
+                    "$APP_DIR/.codex-linux/mcp-helper-reaper/codex-mcp-helper-reaper" \
+                    "$update_builder_root/linux-features/mcp-helper-reaper/reaper/target/release/codex-mcp-helper-reaper" \
+                    "$feature_id helper"
+                ;;
+            read-aloud-mcp)
+                stage_update_builder_native_artifact \
+                    "$APP_DIR/resources/plugins/openai-bundled/plugins/read-aloud/bin/codex-read-aloud-linux" \
+                    "$update_builder_root/target/release/codex-read-aloud-linux" \
+                    "$feature_id backend"
+                ;;
+            record-and-replay)
+                stage_update_builder_native_artifact \
+                    "$APP_DIR/resources/native/codex-record-replay-linux" \
+                    "$update_builder_root/target/release/codex-record-replay-linux" \
+                    "$feature_id backend"
+                ;;
             *) continue ;;
         esac
-        [ -e "$REPO_DIR/$consumer" ] || error "Missing native feature consumer: $consumer"
-        mkdir -p "$update_builder_root/$(dirname "$consumer")"
-        cp -a "$REPO_DIR/$consumer" "$update_builder_root/$consumer"
     done < <("$(package_node_binary)" "$REPO_DIR/scripts/lib/linux-features.js" --enabled)
 }
 
