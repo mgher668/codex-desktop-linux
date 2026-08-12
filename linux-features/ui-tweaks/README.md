@@ -89,6 +89,13 @@ Config keys:
 - `enabled`: `true` applies the two current official-package Dock descriptors
   and stages their resources. `false` leaves official Linux behavior unchanged.
 
+To remove `ui-tweaks` after using a custom Dock icon, first keep the feature
+enabled, set `appearance.dockIcon.enabled` to `false`, rebuild and install, and
+launch the app once. That launch lets the marker-safe prelaunch hook remove its
+managed desktop override and icons. The feature can then be removed from the
+next rebuild. Removing `ui-tweaks` directly does not run feature-owned local
+cleanup, by design.
+
 ### `home.suggestedPrompts`
 
 Exposes the upstream Suggested Prompts row in General Settings and enables the
