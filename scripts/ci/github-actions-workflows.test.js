@@ -52,10 +52,26 @@ test("official Linux metadata expires after seven days", () => {
 test("official Linux gate fails closed unless every dependency succeeds", () => {
   const workflow = read(".github/workflows/upstream-build-app.yml");
   const gate = job(workflow, "official-linux-gate");
-  assert.match(gate, /if: \$\{\{ always\(\) \}\}/);
-  for (const dependency of ["signed-baseline", "package-matrix", "watchdog"]) {
-    assert.match(gate, new RegExp(`^      - ${dependency}$`, "m"));
-    assert.match(gate, new RegExp(`needs\\.${dependency}\\.result`));
+  assert.match(
+    gate,
+    /^  official-linux-gate:\n    if: \$\{\{ always\(\) \}\}\n    needs:\n      - signed-baseline\n      - package-matrix\n      - watchdog\n    runs-on:/,
+  );
+
+  for (const [dependency, resultVariable] of [
+    ["signed-baseline", "SIGNED_BASELINE_RESULT"],
+    ["package-matrix", "PACKAGE_MATRIX_RESULT"],
+    ["watchdog", "WATCHDOG_RESULT"],
+  ]) {
+    assert.match(
+      gate,
+      new RegExp(
+        `^          ${resultVariable}: \\$\\{\\{ needs\\.${dependency}\\.result \\}\\}$`,
+        "m",
+      ),
+    );
+    assert.match(
+      gate,
+      new RegExp(`^          test "\\$${resultVariable}" = success$`, "m"),
+    );
   }
-  assert.equal((gate.match(/= success/g) || []).length, 3);
 });
