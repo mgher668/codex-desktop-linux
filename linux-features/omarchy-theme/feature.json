@@ -14,14 +14,14 @@
     }
   ],
   "runtimeHooks": {
-    "env": {
-      "source": "user-stylesheet.env",
-      "name": "user-stylesheet.env",
-      "mode": "0644"
-    },
     "prelaunch": {
       "source": "install-template.sh",
       "name": "install-template.sh",
+      "mode": "0755"
+    },
+    "launcher": {
+      "source": "stylesheet-env.sh",
+      "name": "stylesheet-env.sh",
       "mode": "0755"
     }
   }

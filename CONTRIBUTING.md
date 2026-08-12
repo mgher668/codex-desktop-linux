@@ -1,332 +1,75 @@
-**IMPORTANT: PLEASE KEEP ONLY ONE PULL REQUEST OPEN AT A TIME. THE DEFAULT MAXIMUM IS TWO ACTIVE PULL REQUESTS FROM THE SAME CONTRIBUTOR, AND EVEN THAT SHOULD BE RESERVED FOR EXCEPTIONAL CIRCUMSTANCES. MAINTAINERS MAY CONFIGURE A DIFFERENT PER-CONTRIBUTOR LIMIT FOR EXPLICIT EXCEPTIONS. DO NOT OPEN SEVERAL PULL REQUESTS AT ONCE; FINISH OR CLOSE EXISTING WORK BEFORE SUBMITTING MORE. AN AUTOMATED BOT WILL CLOSE PULL REQUESTS THAT EXCEED THE EFFECTIVE LIMIT.**
+# Contributing to Codex Desktop for Linux
 
-**IMPORTANT: THIS PROJECT SUPPORTS ONLY THE LATEST UPSTREAM `CODEX.DMG`. WHEN FIXING UPSTREAM DRIFT, REMOVE OLD DRIFT WORKAROUNDS IN THE SAME PULL REQUEST. DO NOT KEEP LEGACY DMG SHAPES, FALLBACK PATCH PATHS, OR VERSION-SPECIFIC COMPATIBILITY ZOOS AROUND. THE CODE SHOULD TARGET THE CURRENT DMG SO REVIEW, VALIDATION, AND DIAGNOSTICS DO NOT HAVE TO GUESS WHICH UPSTREAM VERSION FAILED.**
+Keep only one pull request open at a time (two only for an explicit maintainer
+exception). Keep each change focused and stay engaged through review.
 
-# Contributing to ChatGPT Desktop for Linux
+This project supports only the latest signed stable OpenAI Linux package on the
+two published architectures. When upstream changes, remove obsolete drift
+workarounds in the same pull request; do not retain version-specific branches or
+fallback shapes.
 
-Thanks for your interest in contributing to ChatGPT Desktop for Linux. This project adapts the official macOS ChatGPT Desktop DMG into a runnable Linux app, packages it for multiple Linux distributions, and maintains a local Rust update manager for future rebuilds.
+## Before editing
 
-Contributions of all sizes are welcome: bug reports, documentation improvements, packaging fixes, installer updates, tests, and new features.
+- Read `AGENTS.md` and the relevant architecture document.
+- Edit source owners, never generated `codex-app/`, candidates, `dist/`, or
+  `target/`.
+- Preserve clean-build `resources/app.asar` byte identity.
+- Treat launcher, updater, shared package, and feature-framework changes as
+  cross-format.
+- Keep optional, distro/editor/browser/workflow-specific behavior in a
+  disabled-by-default `linux-features/<id>/` module with a README.
+- Do not add a core ASAR patch without a reproduced mandatory failure and a
+  required regression test.
 
-## Pull Request Best Practices
+Primary source routing:
 
-- Keep each pull request focused: one bug fix, one feature, or one maintenance change.
-- Touch the minimum set of files needed to solve the problem.
-- Avoid mixed pull requests that combine unrelated fixes, refactors, formatting, docs, or cleanup.
-- Think through the impact on every supported path: source installs, `.deb`, `.rpm`, pacman packages, Nix, updater rebuilds, and different desktop environments.
-- Preserve existing platform behavior unless the pull request explicitly explains why it must change.
-- If a feature is not part of the standard upstream ChatGPT Desktop experience and is not required Linux compatibility glue, implement it as an opt-in `linux-features/` module instead of a core patch.
-- Include a short summary, the user-visible behavior change, and the validation you ran.
+- verification/extraction: `scripts/lib/upstream-linux-package.*`
+- launcher: `launcher/start.sh.template`
+- ASAR engine: `scripts/patches/` and `scripts/patch-linux-window-ui.js`
+- feature manifests/resources/hooks: `linux-features/`
+- shared packaging: `scripts/lib/package-common.sh`
+- updater: `updater/src/`
+- Nix: `flake.nix` and `nix/`
 
-## Before You Start
-
-Please take a moment to understand how this repository is structured before making changes.
-
-- `install.sh` is the top-level installer entrypoint. Build-pipeline logic lives in `scripts/lib/*.sh` (DMG handling, ASAR patching, native modules, Electron download, bundled plugins) and the runtime launcher body lives in `launcher/start.sh.template`. Edit the template for launcher behavior and a lib file for build-pipeline behavior — `install.sh` itself is just orchestration plus the prelude that bakes install-time identity into the generated launcher.
-- `scripts/build-deb.sh`, `scripts/build-rpm.sh`, and `scripts/build-pacman.sh` package an already-generated `codex-app/`.
-- `scripts/install-deps.sh` bootstraps local development dependencies.
-- `updater/` contains the Rust update manager.
-- `scripts/patch-linux-window-ui.js` is the build-facing ASAR patcher CLI. Core
-  patch descriptors live under `scripts/patches/core/`, with implementation
-  helpers under `scripts/patches/impl/`.
-- `codex-app/` and `dist/` are generated artifacts and should not be treated as primary source unless you are intentionally validating generated output.
-
-For repository-specific implementation details, read [`AGENTS.md`](./AGENTS.md) and the relevant sections in [`README.md`](./README.md) before starting work.
-
-## Ways to Contribute
-
-You can help by:
-
-- reporting bugs or regressions
-- proposing UX or packaging improvements
-- improving Linux compatibility across distributions and desktop environments
-- fixing installer, launcher, updater, or packaging issues
-- adding or improving tests
-- improving documentation
-
-## Reporting Issues and Proposing Changes
-
-Before opening a new issue or pull request:
-
-- search existing issues and pull requests to avoid duplicates
-- gather as much context as possible, especially distro, desktop environment, package format, and exact reproduction steps
-- include logs or command output when relevant
-
-Good issue reports usually include:
-
-- distro and version
-- package format used: `.deb`, `.rpm`, `.pkg.tar.zst`, or dev build
-- whether the issue happens in `install.sh`, packaged runtime, updater, or generated launcher
-- exact commands used
-- expected behavior
-- actual behavior
-
-### Labels and maintainer triage
-
-Repository labels are assigned by maintainers and authorized collaborators
-during triage. Contributors without repository label permission should provide
-the facts needed to classify the work; they should not self-assign, request,
-or guess labels. A new item with no labels is waiting for triage, not rejected.
-
-Coding agents follow the same boundary. Without explicit delegated label
-authority, an agent may propose a classification to authorized staff but must
-not create, apply, remove, or rename labels. Staff-authorized repository
-automation may apply deterministic classifications from the policy. Bulk
-catalog changes remain restricted to the trusted manual workflow.
-
-Read [issue and pull request label governance](docs/label-governance.md) for
-the authority model, taxonomy, selection rules, and migration process.
-
-## Development Setup
-
-The recommended local setup is:
+## Setup
 
 ```bash
 git clone https://github.com/ilysenko/codex-desktop-linux.git
 cd codex-desktop-linux
 bash scripts/install-deps.sh
+./install.sh
 ```
 
-This project requires:
+The build requires Node.js 20+, npm, Python 3, curl, `gpgv`, `dpkg-deb`,
+SHA-256 utilities, tar, make, and a C/C++ toolchain. Rust is required for the
+updater and retained native feature helpers.
 
-- `python3`
-- `7z` or `7zz`
-- `curl`
-- `unzip`
-- `make`
-- `g++`
-- Rust toolchain with `cargo`
+## Pull requests
 
-`install.sh` downloads a managed Node.js runtime for the build and packaged app. A system Node.js install is optional user tooling.
+Describe the problem, user-visible behavior, affected package formats/features,
+and exact validation. Do not self-assign repository labels; maintainers and
+authorized automation apply the taxonomy from `docs/label-governance.md`.
 
-If you are working on apt-based systems, prefer the bootstrap path in `scripts/install-deps.sh` so you get a compatible Node.js version.
+Prefer a regression test before the fix. Keep shell defensive, Rust idiomatic,
+interfaces small, and dependencies explicit. Never weaken signature, hash,
+sandbox, candidate-promotion, or running-app safety checks to make a test pass.
 
-## Recommended Contribution Flow
+## Validation
 
-1. Find or open an issue.
-2. Comment on the issue if you plan to work on it, especially for non-trivial changes.
-3. Fork the repository and create a focused branch.
-4. Read the relevant source-of-truth files before editing generated output.
-5. Implement the smallest correct change that solves the problem.
-6. Add or update tests.
-7. Run the appropriate validation commands locally.
-8. Open a pull request with a clear summary, scope, and validation notes.
-9. Stay engaged after opening the PR and respond to review comments promptly.
-
-## Engineering Standards
-
-Contributions should prioritize maintainability, clarity, and safe behavior across Linux distributions.
-
-### Coding Standards
-
-- Follow the existing style and conventions of the surrounding code.
-- Prefer small, focused changes over broad refactors.
-- Keep shell scripts readable, defensive, and explicit.
-- Keep Rust code idiomatic, strongly typed, and easy to test.
-- Avoid introducing hidden coupling between installer, generated launcher, packaging, and updater behavior.
-- Do not patch generated artifacts when the real source of truth is elsewhere.
-
-### Design Principles
-
-All changes should respect these principles:
-
-- `SOLID`: keep responsibilities separated and interfaces clear
-- `Clean Code`: optimize for readability and maintainability
-- `DRY`: avoid duplicated logic when a shared helper or source of truth is more appropriate
-- `YAGNI`: do not add speculative features or abstractions
-- `KISS`: prefer the simplest solution that correctly solves the problem
-
-When these principles conflict, prefer the option that keeps the repository easier to maintain and reason about.
-
-### Source-of-Truth Discipline
-
-This repository has generated outputs, and changes must respect the real ownership boundaries.
-
-- Prefer changing `launcher/start.sh.template` (runtime/launcher behavior) or the relevant `scripts/lib/*.sh` module (build-pipeline behavior) over editing `codex-app/start.sh` or the top-level `install.sh` directly.
-- Prefer changing packaging templates and helper scripts over editing staged package output.
-- Prefer changing updater source under `updater/` over working around behavior in tests or generated files.
-- If behavior differs between generated artifacts and source, fix the source and regenerate or revalidate.
-
-## Testing and Quality Requirements
-
-Every behavioral change should be validated. Do not rely on reasoning alone.
-
-### TDD Expectation
-
-Use TDD for functional changes whenever practical.
-
-- Write or update a failing test first for bug fixes and new behavior.
-- Implement the smallest change necessary to make the test pass.
-- Re-run the targeted test and then the broader relevant validation suite.
-
-For bug fixes, the preferred pattern is:
-
-1. reproduce the bug with a test
-2. confirm the test fails for the right reason
-3. implement the fix
-4. confirm the test passes
-5. run the surrounding suite to catch regressions
-
-### Required Quality Bar
-
-Contributors are expected to:
-
-- test any code change
-- update tests when behavior changes
-- avoid merging unverified fixes
-- keep CI green
-- leave the codebase at least as clean as they found it
-
-### Recommended Validation Commands
-
-Run the subset that matches your change. For installer, packaging, or updater work, these are the baseline commands:
+Use the smallest relevant set, followed by broader coverage for shared changes:
 
 ```bash
-bash -n install.sh
-bash -n scripts/lib/*.sh
-bash -n launcher/start.sh.template
-bash -n scripts/install-deps.sh
-bash -n scripts/build-deb.sh
-bash -n scripts/build-rpm.sh
-bash -n scripts/build-pacman.sh
-cargo check -p codex-update-manager
-cargo test -p codex-update-manager
+bash -n install.sh scripts/lib/*.sh launcher/start.sh.template
 bash tests/scripts_smoke.sh
+node --test scripts/lib/upstream-linux-package.test.js
+node --test scripts/patch-linux-window-ui.test.js scripts/lib/linux-features.test.js linux-features/*/test.js
+cargo test -p codex-update-manager
+cargo clippy -p codex-update-manager --all-targets -- -D warnings
+./scripts/ci-local.sh pr
+./scripts/ci-local.sh all
 ```
 
-If your change affects packaging, also run the relevant package builds:
-
-```bash
-./scripts/build-deb.sh
-./scripts/build-rpm.sh
-./scripts/build-pacman.sh
-```
-
-If your change affects launcher behavior, inspect the generated launcher:
-
-```bash
-sed -n '1,160p' codex-app/start.sh
-```
-
-If your change affects updater behavior, inspect runtime state where appropriate:
-
-```bash
-systemctl --user status codex-update-manager.service
-codex-update-manager status --json
-sed -n '1,160p' ~/.local/state/codex-update-manager/state.json
-sed -n '1,160p' ~/.local/state/codex-update-manager/service.log
-```
-
-When a command is not applicable or not available in your environment, mention that clearly in the pull request.
-
-## Working With Agents
-
-If you use AI coding agents or sub-agents while contributing, apply structured, reviewable workflows.
-
-### SDD Expectation
-
-Use SDD, meaning subagent-driven development, only in a disciplined way.
-
-- Break work into small, well-scoped tasks.
-- Delegate only bounded tasks with clear ownership.
-- Do not allow multiple agents to edit the same files without coordination.
-- Review agent output before considering the work complete.
-- Re-run tests yourself after integrating agent-generated changes.
-- Treat agent output as draft engineering work, not as verified truth.
-
-Good uses of agents include:
-
-- isolated documentation updates
-- targeted test additions
-- small, disjoint code changes
-- codebase exploration for specific questions
-
-Bad uses of agents include:
-
-- broad unsupervised refactors
-- overlapping edits to the same subsystem
-- skipping local validation because the agent claims success
-
-## Versioning Rules
-
-This repository has explicit versioning expectations for the updater crate.
-
-- bump `patch` for fixes, docs, and maintenance-only updates
-- bump `minor` for backward-compatible feature additions
-- bump `major` for incompatible CLI, persisted-state, or install-flow changes
-
-If you change the updater crate version:
-
-- update the relevant documentation such as `README.md` and `AGENTS.md`
-- ensure the version bump matches the real user-facing impact
-
-If you are not sure which version bump is appropriate, ask in the issue or pull request before finalizing the change.
-
-## Pull Request Expectations
-
-A good pull request should be easy to review and easy to validate.
-
-### Keep PRs Focused
-
-- Submit one logical change per PR when possible.
-- Avoid mixing unrelated refactors with bug fixes or feature work.
-- Call out any follow-up work that you intentionally left out of scope.
-
-### PR Description Checklist
-
-Include:
-
-- what changed
-- why it changed
-- the source-of-truth files edited
-- how it was tested
-- any distro, package, or environment limitations
-- any known risks or follow-up items
-
-### Review Comments
-
-If you open a PR, stay attentive to review comments.
-
-- respond to reviewer feedback clearly and respectfully
-- push follow-up commits promptly when changes are requested
-- explain tradeoffs when you disagree
-- do not ignore unresolved comments
-- re-run relevant validation after applying review feedback
-
-If a reviewer raises uncertainty about versioning, compatibility, packaging, or updater behavior, resolve that uncertainty before considering the PR ready to merge.
-
-## Commit Quality
-
-Make commits intentional and readable.
-
-- prefer clear commit messages
-- keep commits focused and reviewable
-- avoid mixing formatting-only noise with functional changes unless necessary
-- if your workflow uses conventional commits, apply them consistently
-
-## Documentation Expectations
-
-Update documentation when behavior, developer workflow, packaging, or versioning expectations change.
-
-Examples:
-
-- installer behavior changes
-- packaging dependency changes
-- updater behavior changes
-- new required validation steps
-- versioning policy updates
-
-## What to Avoid
-
-Please avoid:
-
-- editing generated output instead of the real source of truth
-- introducing speculative abstractions
-- skipping tests for behavioral changes
-- silently changing user-facing behavior without documentation
-- bundling unrelated cleanups into the same PR
-- leaving reviewer comments unresolved
-
-## Thank You
-
-Every improvement helps make ChatGPT Desktop for Linux more reliable across distributions, desktop environments, and packaging formats. Thanks for taking the time to contribute thoughtfully.
+Package payload changes should inspect deb, RPM, pacman, AppImage, and Nix as
+applicable. Feature changes require the adjacent feature test plus a build with
+that feature alone. Upstream-source changes require the complete trust-failure
+matrix.

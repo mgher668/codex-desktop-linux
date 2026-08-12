@@ -74,7 +74,7 @@ lifecycle actions needed by the UI. The install button also uses `execFile` with
 the fixed npm package name. When no npm prefix is already configured, the
 install button runs `npm install -g --prefix ~/.local
 @agent-sh/agent-workspace-linux` so packaged installs do not try to write into
-the bundled managed Node.js runtime or a system directory.
+the application runtime or a system directory.
 It resolves the binary in this order (highest priority first):
 
 1. the settings-page command field, persisted as

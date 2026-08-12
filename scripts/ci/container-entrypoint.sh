@@ -11,26 +11,31 @@ install_apt() {
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         bash ca-certificates curl dpkg-dev g++ gcc git gnupg make nodejs npm \
-        pkg-config python3 rpm rpm2cpio sudo tar unzip util-linux xz-utils
+        pkg-config python3 ripgrep rpm rpm2cpio sudo tar unzip util-linux xz-utils
 }
 
 install_fedora() {
     dnf install -y bash ca-certificates curl dpkg gcc gcc-c++ git gnupg2 make \
-        nodejs npm python3 rpm-build tar unzip util-linux xz
+        nodejs npm python3 ripgrep rpm-build tar unzip util-linux xz
 }
 
 install_arch() {
     pacman -Syu --noconfirm --needed base-devel ca-certificates curl dpkg git \
-        gnupg nodejs npm python rustup sudo unzip util-linux xz zstd
+        gnupg nodejs npm python ripgrep rustup sudo unzip util-linux xz zstd
 }
 
 prepare() {
     case "$CI_JOB" in
         rpm) install_fedora ;;
         pacman) install_arch ;;
-        nix) return 0 ;;
+        nix) ;;
+        install-deps) ;;
         *) install_apt ;;
     esac
+
+    if command -v git >/dev/null 2>&1; then
+        git config --global --add safe.directory "$REPO_DIR"
+    fi
 }
 
 build_clean_app() {
@@ -39,8 +44,14 @@ build_clean_app() {
 }
 
 run_core() {
+    local node_test_log
+    node_test_log="$(mktemp)"
     bash tests/scripts_smoke.sh
-    node --test scripts/patch-linux-window-ui.test.js scripts/lib/linux-features.test.js linux-features/*/test.js
+    if ! node --test scripts/patch-linux-window-ui.test.js scripts/lib/linux-features.test.js linux-features/*/test.js >"$node_test_log" 2>&1; then
+        rg -n -C 30 '^not ok' "$node_test_log" || tail -n 120 "$node_test_log"
+        return 1
+    fi
+    tail -n 12 "$node_test_log"
     if command -v cargo >/dev/null 2>&1; then
         cargo test -p codex-update-manager
     fi
@@ -52,7 +63,30 @@ run_package() {
     case "$CI_JOB" in
         deb) ./scripts/build-deb.sh ;;
         rpm) ./scripts/build-rpm.sh ;;
-        pacman) ./scripts/build-pacman.sh ;;
+        pacman)
+            local host_uid="${CI_HOST_UID:?missing CI_HOST_UID}"
+            local host_gid="${CI_HOST_GID:?missing CI_HOST_GID}"
+            local builder_group
+            local builder_user
+            builder_group="$(getent group "$host_gid" | cut -d: -f1 || true)"
+            if [ -z "$builder_group" ]; then
+                builder_group=codex-ci
+                groupadd --gid "$host_gid" "$builder_group"
+            fi
+            builder_user="$(getent passwd "$host_uid" | cut -d: -f1 || true)"
+            if [ -z "$builder_user" ]; then
+                builder_user=codex-ci
+                useradd --uid "$host_uid" --gid "$host_gid" --no-create-home "$builder_user"
+            fi
+            install -d -o "$host_uid" -g "$host_gid" /tmp/codex-ci-home
+            chown -R "$host_uid:$host_gid" "$REPO_DIR/codex-app" "$REPO_DIR/dist"
+            runuser -u "$builder_user" -- env \
+                HOME=/tmp/codex-ci-home \
+                CODEX_LINUX_FEATURES_CONFIG="$CODEX_LINUX_FEATURES_CONFIG" \
+                PACKAGE_VERSION="$PACKAGE_VERSION" \
+                PACKAGE_WITH_UPDATER="$PACKAGE_WITH_UPDATER" \
+                ./scripts/build-pacman.sh
+            ;;
     esac
 }
 

@@ -85,7 +85,7 @@ test("api-key-service-tier stays disabled until listed in features.json", () => 
   });
 });
 
-test("current DMG descriptors target the three owning app bundles", () => {
+test("current package descriptors target the three owning app bundles", () => {
   assert.deepEqual(
     descriptors.map((descriptor) => descriptor.id),
     [

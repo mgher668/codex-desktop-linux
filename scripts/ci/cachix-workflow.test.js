@@ -8,5 +8,5 @@ test("Cachix builds when official Linux package pins change", () => {
   const workflow = fs.readFileSync(".github/workflows/cachix.yml", "utf8");
   assert.match(workflow, /nix\/upstream-linux-packages\.json/);
   assert.match(workflow, /nix build/);
-  assert.doesNotMatch(workflow, /Codex DMG|codexDmg|native-modules/);
+  assert.doesNotMatch(workflow, /codexDmg|nativeModulesSource/);
 });

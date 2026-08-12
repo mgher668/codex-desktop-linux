@@ -207,7 +207,7 @@ test("model picker descriptors target the current state and menu bundles", () =>
   assert.match(stateAsset, MODEL_PICKER_INLINE_ASSET_PATTERN);
   assert.match(effortAsset, MODEL_PICKER_EFFORT_ASSET_PATTERN);
 
-  // Current-DMG-only targeting must not retain previous chunks as fallbacks.
+  // Current-package-only targeting must not retain previous chunks as fallbacks.
   assert.doesNotMatch(
     "app-initial~app-main~page-CMpPiY3-.js",
     MODEL_PICKER_STATE_ASSET_PATTERN,

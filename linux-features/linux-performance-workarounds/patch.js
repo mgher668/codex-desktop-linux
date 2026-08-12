@@ -8,7 +8,7 @@ const {
   matchesLinuxAppShellTabLayoutPerformanceContract,
   matchesLinuxMarkdownAnimationPerformanceContract,
   matchesLinuxSidebarScrollPerformanceContract,
-} = require("../../scripts/patches/impl/webview/index.js");
+} = require("./implementation.js");
 
 module.exports = [
   webviewAssetPatch({

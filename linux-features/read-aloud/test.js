@@ -27,9 +27,6 @@ const {
   normalizePatchDescriptors,
 } = require("../../scripts/patches/engine.js");
 const { createPatchReport } = require("../../scripts/lib/patch-report.js");
-const {
-  applyLinuxExternalOpenEnvPatch,
-} = require("../../scripts/patches/impl/main-process/browser.js");
 const { requireName } = require("../../scripts/patches/lib/minified-js.js");
 
 function twice(fn, source) {
@@ -166,18 +163,18 @@ test("main handler does not capture a function-local child-process alias from an
   assert.doesNotMatch(patched, /let child=__codexChild\.spawn\(command,args/);
 });
 
-test("main bundle helper preserves the core Electron binding across patch reruns", () => {
+test("main bundle helper preserves the official Electron binding across patch reruns", () => {
   const source = [
     '"use strict";',
     'let c=require("electron"),e=require(`node:child_process`),f=require(`node:fs`),p=require(`node:path`),o=require(`node:os`);',
     'var h={handlers:{"set-vs-context":async()=>{},"native-desktop-apps":async()=>({apps:[]})}};',
   ].join("");
-  const withExternalOpen = applyLinuxExternalOpenEnvPatch(source);
-  const patched = applyMainBundlePatch(withExternalOpen);
+  const patched = applyMainBundlePatch(source);
 
   assert.equal(requireName(patched, "electron"), "c");
-  assert.match(patched, /let loadElectron=\(\)=>require\(`electron`\)/);
-  assert.equal(applyLinuxExternalOpenEnvPatch(patched), patched);
+  assert.match(patched, /electronApi=c/);
+  assert.doesNotMatch(patched, /electronApi=require\(`electron`\)/);
+  assert.equal(applyMainBundlePatch(patched), patched);
 });
 
 test("webview runtime appends only once", () => {

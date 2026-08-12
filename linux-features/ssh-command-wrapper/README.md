@@ -42,7 +42,7 @@ rebuild the app:
 ```
 
 ```bash
-./install.sh ./Codex.dmg
+./install.sh /path/to/chatgpt_<version>_<arch>.deb
 ```
 
 ## Test

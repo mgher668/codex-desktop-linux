@@ -135,7 +135,7 @@ test("composer descriptor targets the current app-initial bundle", () => {
   assert.equal(descriptor.pattern.test("composer-old.js"), false);
 });
 
-test("current DMG co-locates dictation, composer, and assistant ownership", () => {
+test("current package co-locates dictation, composer, and assistant ownership", () => {
   const dictation = featurePatches.find((patch) => patch.id === "dictation-endpoint");
   const composer = featurePatches.find((patch) => patch.id === "composer-control");
   const assistant = featurePatches.find((patch) => patch.id === "assistant-observer");

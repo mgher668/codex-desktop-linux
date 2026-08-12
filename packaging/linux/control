@@ -9,4 +9,4 @@ Recommends: pulseaudio | libasound2, git
 Suggests: gir1.2-gnomekeyring-1.0, libgnome-keyring0, lsb-release
 Description: ChatGPT Desktop for Linux
  Custom codex-desktop distribution built from OpenAI's signed official Linux package.
- The official Linux runtime, native modules, Codex CLI, rg, and code-mode host are bundled.
+ The complete official Linux runtime, Codex CLI, rg, and code-mode host are bundled.

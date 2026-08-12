@@ -12,10 +12,6 @@ const {
 const {
   isPatchIntegrityError,
 } = require("./patches/integrity-error.js");
-const {
-  createInventory,
-  findPostPatchIntegrityFindings,
-} = require("./lib/upstream-dmg-intel.js");
 
 const USAGE = "Usage: patch-linux-window-ui.js [--report-json path] [--enforce-critical] <extracted-app-asar-dir>";
 
@@ -61,15 +57,6 @@ function main() {
       throw error;
     }
     integrityError = error;
-  }
-  if (report != null) {
-    const inventory = createInventory({ sourcePath: extractedDir });
-    const findings = findPostPatchIntegrityFindings(inventory);
-    report.postPatchIntegrity = {
-      sourcePath: extractedDir,
-      findingCount: findings.length,
-      findings,
-    };
   }
   // Write the report before gating so CI artifact upload sees it even on failure.
   writePatchReport(reportJson, report);

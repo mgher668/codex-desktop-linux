@@ -22,10 +22,8 @@ bash -n scripts/lib/*.sh scripts/build-deb.sh scripts/build-rpm.sh scripts/build
 
 assert_contains install.sh 'upstream-linux-package.sh'
 assert_contains install.sh 'CODEX_TARGET_ARCH'
-assert_absent install.sh 'scripts/lib/dmg.sh'
 assert_contains launcher/start.sh.template '/ChatGPT'
-assert_absent launcher/start.sh.template 'webview-server'
-assert_absent launcher/start.sh.template 'cli-preflight'
+assert_absent launcher/start.sh.template 'local content server'
 assert_contains packaging/linux/control 'official Linux runtime'
 assert_contains packaging/linux/codex-desktop.spec 'official runtime'
 assert_contains packaging/linux/codex-packaged-runtime.sh 'codex-update-manager check-now'

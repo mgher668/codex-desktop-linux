@@ -132,7 +132,7 @@ test("persists Copilot reasoning effort through the current default writer", () 
   );
 });
 
-test("current DMG descriptors target only the owning Copilot chunks", () => {
+test("current package descriptors target only the owning Copilot chunks", () => {
   const settingsChunk =
     "app-initial~app-main~hotkey-window-thread-page~keyboard-shortcuts-settings~thread-app-shell~cf704xib-BpnUyB2R.js";
   const uiChunk =

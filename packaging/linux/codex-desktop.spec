@@ -27,7 +27,7 @@ Recommends:     zenity, kdialog
 
 %description
 Custom codex-desktop distribution built from OpenAI's signed official Linux package.
-The official runtime, native modules, Codex CLI, rg, and code-mode host are bundled.
+The complete official runtime, Codex CLI, rg, and code-mode host are bundled.
 %if __PACKAGE_WITH_UPDATER__
 Local updates verify OpenAI's signed APT metadata and rebuild from the indexed Linux package.
 %else

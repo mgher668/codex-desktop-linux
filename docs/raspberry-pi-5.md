@@ -64,25 +64,20 @@ console-only boot must have its existing display manager enabled before the
 desktop launcher can be tested. The validated system used LightDM automatic
 login with the Raspberry Pi Labwc session.
 
-After installation, start **ChatGPT** from the desktop menu. The first launch
-may install or update the Codex CLI. If manual setup is needed, include the
-optional platform dependency:
-
-```bash
-npm install -g --include=optional --prefix ~/.local @openai/codex
-```
+After installation, start **ChatGPT** from the desktop menu. The official ARM64
+package already contains the matching Codex CLI and platform runtime.
 
 ## Validation results
 
 The following checks passed on the test Pi:
 
-- clean ARM64 app build and native module rebuild
+- clean ARM64 app extraction and custom package build
 - native `arm64` Debian package creation and installation
 - graphical reboot into the Labwc Wayland desktop
 - application launch from the live desktop session
 - correctly rendered ChatGPT sign-in window
 - account sign-in
-- Codex app-server startup using the ARM64 Codex CLI
+- Codex app-server startup using the bundled ARM64 Codex CLI
 - workspace file creation and editing
 - integrated command execution
 - Python, SQLite, automated test, and local Git workflows

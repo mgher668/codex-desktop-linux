@@ -5,7 +5,7 @@ const { patchAutomationScheduleAssets } = require("../../scripts/patches/impl/au
 const {
   applyAutomationUpdateEagerToolPatch,
   matchesAutomationUpdateEagerToolContract,
-} = require("../../scripts/patches/impl/webview/index.js");
+} = require("./eager-update.js");
 
 module.exports = [
   extractedAppPatch({

@@ -9,7 +9,10 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
         lib = pkgs.lib;
         nixLinuxFeatures = import ./nix/linux-features.nix { inherit lib; };
         upstreamPins = builtins.fromJSON (builtins.readFile ./nix/upstream-linux-packages.json);
@@ -117,8 +120,7 @@
               cp -R "$src" "$source_dir"
               chmod -R u+w "$source_dir"
               substituteInPlace "$source_dir/scripts/lib/asar-patch.sh" \
-                --replace-fail "npx --yes asar" "${pkgs.asar}/bin/asar" \
-                --replace-fail "npx asar" "${pkgs.asar}/bin/asar"
+                --replace-fail "npx --yes @electron/asar" "${pkgs.asar}/bin/asar"
               export CODEX_INSTALL_TRANSACTION_ACTIVE=1
               export CODEX_INSTALL_DIR="$out/opt/codex-desktop"
               export CODEX_LINUX_FEATURES_CONFIG="${featuresConfig}"

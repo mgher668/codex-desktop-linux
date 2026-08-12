@@ -17,10 +17,10 @@ coverage.
 
 ## Current OpenAI working-tree route
 
-OpenAI Desktop `26.803.41515` has a Linux-specific Parcel working-tree path in
-the official macOS DMG. That path calls `@parcel/watcher` directly instead of
+OpenAI Desktop `26.803.81509` has a Linux-specific Parcel working-tree path in
+the official Linux package. That path calls `@parcel/watcher` directly instead of
 the local `startFileWatch()` method this feature intercepts. When this feature
-is selected, its current-DMG patch reroutes that one local recursive
+is selected, its current-package patch reroutes that one local recursive
 working-tree request through `startFileWatch()`, where the exact recursive
 working-tree contract enters Watchbound. Remote watches and non-working-tree
 file watches retain their existing routes.
@@ -75,7 +75,7 @@ export CODEX_WATCHBOUND_NODE_ARCHIVE=/path/to/gadicc-watchbound-node-2.1.1.tgz
 export CODEX_WATCHBOUND_NODE_X64_ARCHIVE=/path/to/gadicc-watchbound-node-linux-x64-gnu-2.1.1.tgz
 # Use CODEX_WATCHBOUND_NODE_ARM64_ARCHIVE on ARM64 or
 # CODEX_WATCHBOUND_NODE_ARM_ARCHIVE on ARMv7/armhf.
-./install.sh ./Codex.dmg
+./install.sh /path/to/chatgpt_<version>_<arch>.deb
 ```
 
 Watchbound `2.1.1` qualifies x64, ARM64, and exact little-endian ARMv7
@@ -93,7 +93,7 @@ resolution, and `support.currentRuntime.targetCompatible`. It requires
 established physical root still matches that qualification snapshot. It does
 not recreate Watchbound's target or root decision from host strings.
 
-Build-time runtime qualification does not execute the downloaded Electron
+Build-time runtime qualification does not execute the upstream Electron
 binary. The extracted app's pinned Electron dependency must match the exact
 Electron/Node pair in the checked-in Watchbound artifact manifest; a mismatch
 rejects this enabled feature before package materialization.
@@ -120,10 +120,10 @@ one watcher owner, and the feature adds no polling.
 
 Watchbound upgrades are deliberate lockstep changes. An upgrade must refresh
 the source revision, Cargo lock, every supported published target, the complete
-archive/file manifest, the capability contract, and the latest-DMG fixture.
+archive/file manifest, the capability contract, and the latest-package fixture.
 The focused integration suite, all-system flake evaluation, and the
 Watchbound-enabled watchdog output then exercise that state. Missing targets,
-package drift, runtime mismatch, current-DMG drift, or an unprovable rollback
+package drift, runtime mismatch, current-package drift, or an unprovable rollback
 reject an enabled-feature candidate; users who leave the feature disabled do
 not enter this package or patch path.
 

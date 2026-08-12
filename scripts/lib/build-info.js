@@ -252,45 +252,6 @@ function sha256File(filePath) {
   return hasher.digest("hex");
 }
 
-function appBundleVersion(appDir) {
-  const infoPath = path.join(appDir, "Contents", "Info.plist");
-  if (!fs.existsSync(infoPath)) {
-    return null;
-  }
-  const result = childProcess.spawnSync(
-    "python3",
-    ["-c", "import plistlib,sys; p=plistlib.load(open(sys.argv[1],'rb')); print(p.get('CFBundleShortVersionString') or p.get('CFBundleVersion') or '')", infoPath],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-  );
-  if (result.status !== 0) {
-    return null;
-  }
-  const version = result.stdout.trim();
-  return version.length > 0 ? version : null;
-}
-
-function recordAppVersionMetadata(metadataPath, appDir) {
-  const appVersion = appBundleVersion(appDir);
-  if (appVersion == null) {
-    return null;
-  }
-  const metadata = fs.existsSync(metadataPath)
-    ? JSON.parse(fs.readFileSync(metadataPath, "utf8"))
-    : {};
-  metadata.appVersion = appVersion;
-  const metadataDir = path.dirname(metadataPath);
-  fs.mkdirSync(metadataDir, { recursive: true });
-  const stagingDir = fs.mkdtempSync(path.join(metadataDir, ".upstream-dmg-metadata-"));
-  const stagingPath = path.join(stagingDir, path.basename(metadataPath));
-  try {
-    fs.writeFileSync(stagingPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-    fs.renameSync(stagingPath, metadataPath);
-  } finally {
-    fs.rmSync(stagingDir, { recursive: true, force: true });
-  }
-  return appVersion;
-}
-
 function linuxTargetInfo(target) {
   return {
     summary: linuxTargetSummary(target),
@@ -379,7 +340,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  appBundleVersion,
   buildInfo,
   githubCommitUrl,
   isoTimestamp,
@@ -387,6 +347,5 @@ module.exports = {
   sanitizeGitRemoteUrl,
   sourceInfo,
   sourceInfoFromGit,
-  recordAppVersionMetadata,
   writeBuildInfo,
 };

@@ -16,9 +16,6 @@ const {
   stageEnabledLinuxFeatureInstall,
 } = require("../../scripts/lib/linux-features.js");
 const {
-  applyLinuxExternalOpenEnvPatch,
-} = require("../../scripts/patches/impl/main-process/browser.js");
-const {
   applyRecordReplayDictationTranscriptPatch,
   applyRecordReplayGlobalDictationTranscriptPatch,
   applyRecordReplayHudPatch,
@@ -220,7 +217,7 @@ test("record-and-replay bridge patch is idempotent and uses execFile", () => {
   assert.doesNotMatch(patched, /"--mode"/);
 });
 
-test("record-and-replay bridge remains complete after external-open composition", () => {
+test("record-and-replay bridge is complete and idempotent on the official bundle", () => {
   const source = [
     '"use strict";let electron=require("electron");',
     'const cp=require("node:child_process"),fs=require("node:fs"),path=require("node:path");',
@@ -228,15 +225,14 @@ test("record-and-replay bridge remains complete after external-open composition"
     'var bridge={"get-global-state":async({key:e})=>null};',
   ].join("");
   const recordPatched = applyRecordReplayMainBridgePatch(source);
-  const composed = applyLinuxExternalOpenEnvPatch(recordPatched);
   const { value, warnings } = captureWarns(() =>
-    applyRecordReplayMainBridgePatch(composed),
+    applyRecordReplayMainBridgePatch(recordPatched),
   );
 
-  assert.equal(value, composed);
+  assert.equal(value, recordPatched);
   assert.deepEqual(warnings, []);
   assert.match(
-    composed,
+    recordPatched,
     /require\("node:child_process"\)\.execFile\(/,
   );
 });

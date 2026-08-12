@@ -1,121 +1,40 @@
-# Native Setup
+# Native setup
 
-This project has two native install entrypoints:
-
-- `make bootstrap-native` for the fastest non-interactive first install.
-- `make setup-native` for a guided checklist and optional Linux feature picker.
-
-## Fast Native Install
+The guided path configures optional features and installs the correct custom
+package format for the current Linux distribution:
 
 ```bash
-git clone https://github.com/ilysenko/codex-desktop-linux.git
-cd codex-desktop-linux
+make setup-native
 make bootstrap-native
 ```
 
-`make bootstrap-native` installs build dependencies, regenerates `codex-app/`,
-validates the cached upstream `Codex.dmg` and downloads it only when missing or
-stale, builds the matching native package, and installs the newest artifact
-from `dist/`.
+`bootstrap-native` installs build dependencies, resolves the current official
+package through signed metadata, stages `codex-app/`, builds deb/RPM/pacman as
+appropriate, and installs `codex-desktop`.
 
-If dependencies are already installed:
+For a noninteractive clean install:
 
 ```bash
+bash scripts/install-deps.sh
 make install-native
 ```
 
-To play a best-effort sound immediately before an interactive `sudo` password
-prompt, opt in with `CODEX_SUDO_ALERT=1`:
+For an offline/reproducible source package input:
 
 ```bash
-CODEX_SUDO_ALERT=1 make install-native
-CODEX_SUDO_ALERT=1 make bootstrap-native
-CODEX_SUDO_ALERT=1 make update-native
+UPSTREAM_DEB=/absolute/path/chatgpt_<version>_<arch>.deb make install-native
 ```
 
-The alert is skipped while the existing `sudo` credential timestamp is valid.
-It tries the desktop sound system first and falls back to the terminal bell.
-Missing audio tools, sound files, or audio services never block installation.
+Optional features are selected in the gitignored
+`linux-features/features.json`. The wizard never enables a feature implicitly.
+Review each feature README, required system services, and cleanup behavior.
 
-## Guided Setup
+`codex-desktop` can coexist with official `chatgpt`, but both retain the same
+upstream user profile. Exit one before starting the other.
 
-```bash
-make setup-native
-```
-
-The wizard detects your distro, package manager, native package format, desktop
-session, GUI prompt helpers, `pkexec`, portal status, installed package state,
-updater state, and optional Linux feature manifests.
-
-It can write the git-ignored `linux-features/features.json` file for the next
-build. You can choose features by id, number, or range in the prompt.
-
-The wizard is intentionally separate from `make bootstrap-native`,
-`make install-native`, `make package`, and `make install`, which stay
-non-interactive for scripts and CI.
-
-## Non-Interactive Feature Selection
+Useful checks:
 
 ```bash
-CODEX_LINUX_FEATURES=remote-mobile-control,read-aloud \
-CODEX_LINUX_DISABLE_FEATURES=conversation-mode \
-PACKAGE_WITH_UPDATER=0 \
-CODEX_BOOTSTRAP_NONINTERACTIVE=1 \
-make setup-native
-```
-
-To have the wizard orchestrate existing install commands, opt in explicitly:
-
-```bash
-CODEX_BOOTSTRAP_DRY_RUN=1 \
-CODEX_BOOTSTRAP_INSTALL_DEPS=1 \
-CODEX_BOOTSTRAP_INSTALL_NATIVE=1 \
-make setup-native
-```
-
-```bash
-CODEX_BOOTSTRAP_INSTALL_DEPS=1 \
-CODEX_BOOTSTRAP_INSTALL_NATIVE=1 \
-make setup-native
-```
-
-Build-time feature changes only apply after rebuilding and reinstalling:
-
-```bash
-make install-native
-```
-
-For manual-update packages:
-
-```bash
-PACKAGE_WITH_UPDATER=0 make install-native
-```
-
-## Feature Cleanup
-
-Disabling a feature in `features.json` affects the next rebuild. It does not
-delete local device keys, Read Aloud model files, plugin caches, Python
-runtimes, or services.
-
-Feature cleanup is separate and interactive:
-
-```bash
-CODEX_BOOTSTRAP_CLEANUP_FEATURES=remote-mobile-control,read-aloud make setup-native
-```
-
-Each deletion requires typing `DELETE <exact path>`. Preview cleanup targets:
-
-```bash
-CODEX_BOOTSTRAP_DRY_RUN=1 \
-CODEX_BOOTSTRAP_CLEANUP_FEATURES=remote-mobile-control,read-aloud \
-make setup-native
-```
-
-## Color Output
-
-The wizard uses ANSI color when the terminal supports it.
-
-```bash
-CODEX_BOOTSTRAP_COLOR=0 make setup-native  # disable
-CODEX_BOOTSTRAP_COLOR=1 make setup-native  # force
+codex-desktop --diagnose
+systemctl --user status codex-update-manager.service
 ```

@@ -16,7 +16,7 @@ may be backfilled by the next milestone commit).
   install the upstream APT source, key, or maintainer scripts.
 - [x] All optional features are disabled in committed configuration.
 - [x] Known retired feature IDs are ignored; arbitrary unknown IDs fail.
-- [ ] Active sources outside CHANGELOG/migration history contain no DMG,
+- [x] Active sources outside CHANGELOG/migration history contain no DMG,
   Sparkle, macOS extraction, Electron download, or native rebuild paths.
 
 ## Milestones
@@ -28,8 +28,8 @@ may be backfilled by the next milestone commit).
 | 2 | Compact launcher and cross-format package payload | complete | launcher tests; amd64 deb/RPM builds; pacman/AppImage stage inspection | `2653173b` |
 | 3 | Core patch retirement and feature retargeting | complete | 784 Node tests: 783 pass, 1 skipped; empty core registry; retired/unknown-ID policy | `e26e494d` |
 | 4 | Signed-package updater and state migration | complete | 48 Rust tests; Clippy; signed metadata-only probe; updater-enabled deb payload | `47f6d69d` |
-| 5 | Nix and signed-package CI/watchdog | complete | flake evaluation + Nix package check; signed full amd64/arm64 package verification; cross-arch clean ASAR equality | pending commit |
-| 6 | Documentation and final repository cleanup | pending | `ci-local.sh all`; forbidden-reference scan; diff audit | — |
+| 5 | Nix and signed-package CI/watchdog | complete | flake evaluation + Nix package check; signed full amd64/arm64 package verification; cross-arch clean ASAR equality | `eaf34e8e` |
+| 6 | Documentation and final repository cleanup | complete | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all`; forbidden-reference scan; `git diff --check` | pending commit |
 
 ## Build, package, updater, CI, and documentation checklist
 
@@ -47,7 +47,7 @@ may be backfilled by the next milestone commit).
   code-mode host, locales, libraries, and Owl metadata.
 - [x] Skip ASAR extraction/repack when no ASAR feature is enabled.
 - [x] Emit build-info schema v2 `upstreamLinuxPackage` metadata.
-- [ ] Remove DMG extraction, Electron download, native rebuild, managed runtime,
+- [x] Remove DMG extraction, Electron download, native rebuild, managed runtime,
   webview server, external CLI repair, and duplicate bundled-resource staging.
 
 ### Launcher and packages
@@ -81,12 +81,12 @@ may be backfilled by the next milestone commit).
 
 ### Documentation
 
-- [ ] Rewrite README, architecture, build/package, native setup, updater, Nix,
+- [x] Rewrite README, architecture, build/package, native setup, updater, Nix,
   troubleshooting, feature architecture, validation playbook, and `AGENTS.md`.
-- [ ] Explain official `chatgpt` versus custom `codex-desktop` coexistence.
-- [ ] Explain shared `Codex` profile and concurrent-launch restriction.
-- [ ] Document feature retirement and zero default ASAR patches.
-- [ ] Retain DMG history only in CHANGELOG and this migration record.
+- [x] Explain official `chatgpt` versus custom `codex-desktop` coexistence.
+- [x] Explain shared `Codex` profile and concurrent-launch restriction.
+- [x] Document feature retirement and zero default ASAR patches.
+- [x] Retain DMG history only in CHANGELOG and this migration record.
 
 ## Core patch audit (official 26.803.81509 baseline)
 
@@ -240,13 +240,19 @@ or new feature must also keep its adjacent README and feature-local tests.
 | Date | Scope | Command / environment | Result | Commit |
 |---|---|---|---|---|
 | 2026-08-12 | Baseline inventory | official 26.803.81509 ASAR patch probe | 17 upstream-applied, 64 applied, 5 disabled; 86 total | pre-migration |
-| 2026-08-12 | Source security | `node --test scripts/lib/upstream-linux-package.test.js` | 4/4 pass: valid/tampered/wrong-key signature, release/package hashes and metadata | pending commit |
-| 2026-08-12 | Clean baseline | local official `chatgpt_26.803.81509_amd64.deb` with empty feature config | upstream/output ASAR SHA `87a32f5d…ff9ff66`; launcher diagnose passes; schema v2 emitted | pending commit |
-| 2026-08-12 | Launcher | `node --test launcher/start.test.js` | 2/2 pass: hook composition, exact argument forwarding, diagnose | pending commit |
-| 2026-08-12 | Package payload | updater-disabled amd64 builders | deb and RPM built/inspected; AppImage and pacman staged/inspected; official `codex` retained, duplicate CLI absent, AppArmor path correct | pending commit |
-| 2026-08-12 | Core/feature audit | `node --test scripts/patch-linux-window-ui.test.js scripts/lib/linux-features.test.js linux-features/*/test.js` | 784 tests: 783 pass, 1 skipped; zero core descriptors; four retired IDs ignored and typos rejected | pending commit |
-| 2026-08-12 | Updater | `cargo test -p codex-update-manager`; `cargo clippy -p codex-update-manager -- -D warnings` | 48/48 tests and warning-free Clippy; schema-v1 candidate reset preserves rollback | pending commit |
-| 2026-08-12 | Updater source/payload | metadata-only signed index probe; updater-enabled `.deb` build/inspection | official 26.803.81509 amd64 metadata resolved without package download; update-builder contains verifier/key/templates and no Cargo workspace, managed runtime, or legacy source tooling | pending commit |
-| 2026-08-12 | Signed package pins | production watchdog plus full package verification for `amd64` and `arm64` | both packages are 26.803.81509 and match signed `Packages`; corrected arm64 pin to `f38fcc194eca…accbc1` | pending commit |
-| 2026-08-12 | Nix | clean `nixos/nix` container: parse, `nix flake check --no-build`, and `.#checks.x86_64-linux.official-linux-package` | evaluation and real pinned-package derivation pass | pending commit |
-| 2026-08-12 | Cross-architecture baseline | `CODEX_TARGET_ARCH=arm64 ./install.sh chatgpt_26.803.81509_arm64.deb` | aarch64 ELF staged and output ASAR is byte-identical to official package | pending commit |
+| 2026-08-12 | Source security | `node --test scripts/lib/upstream-linux-package.test.js` | 4/4 pass: valid/tampered/wrong-key signature, release/package hashes and metadata | `33e2c03d` |
+| 2026-08-12 | Clean baseline | local official `chatgpt_26.803.81509_amd64.deb` with empty feature config | upstream/output ASAR SHA `87a32f5d…ff9ff66`; launcher diagnose passes; schema v2 emitted | `33e2c03d` |
+| 2026-08-12 | Launcher | `node --test launcher/start.test.js` | 2/2 pass: hook composition, exact argument forwarding, diagnose | `2653173b` |
+| 2026-08-12 | Package payload | updater-disabled amd64 builders | deb and RPM built/inspected; AppImage and pacman staged/inspected; official `codex` retained, duplicate CLI absent, AppArmor path correct | `2653173b` |
+| 2026-08-12 | Core/feature audit | `node --test scripts/patch-linux-window-ui.test.js scripts/lib/linux-features.test.js linux-features/*/test.js` | 784 tests: 783 pass, 1 skipped; zero core descriptors; four retired IDs ignored and typos rejected | `e26e494d` |
+| 2026-08-12 | Updater | `cargo test -p codex-update-manager`; `cargo clippy -p codex-update-manager -- -D warnings` | 48/48 tests and warning-free Clippy; schema-v1 candidate reset preserves rollback | `47f6d69d` |
+| 2026-08-12 | Updater source/payload | metadata-only signed index probe; updater-enabled `.deb` build/inspection | official 26.803.81509 amd64 metadata resolved without package download; update-builder contains verifier/key/templates and no Cargo workspace, managed runtime, or legacy source tooling | `47f6d69d` |
+| 2026-08-12 | Signed package pins | production watchdog plus full package verification for `amd64` and `arm64` | both packages are 26.803.81509 and match signed `Packages`; corrected arm64 pin to `f38fcc194eca…accbc1` | `eaf34e8e` |
+| 2026-08-12 | Nix | clean `nixos/nix` container: parse, `nix flake check --no-build`, and `.#checks.x86_64-linux.official-linux-package` | evaluation and real pinned-package derivation pass | `eaf34e8e` |
+| 2026-08-12 | Cross-architecture baseline | `CODEX_TARGET_ARCH=arm64 ./install.sh chatgpt_26.803.81509_arm64.deb` | aarch64 ELF staged and output ASAR is byte-identical to official package | `eaf34e8e` |
+| 2026-08-12 | Broad Node suite | tracked `*.test.js` files under Node 24 | 795 tests: 794 pass, 1 skipped, 0 fail | pending commit |
+| 2026-08-12 | Rust updater | `cargo test -p codex-update-manager -q`; `cargo clippy -p codex-update-manager --all-targets -- -D warnings` | 48/48 tests pass; Clippy clean | pending commit |
+| 2026-08-12 | Package matrix | clean-container `.deb`, RPM, pacman and full Nix build | all four package payloads built successfully from official 26.803.81509; upstream `app.asar` retained | pending commit |
+| 2026-08-12 | Dependency bootstrap | `CI_SKIP_PULL=1 ./scripts/ci-local.sh install-deps` | Ubuntu 22.04, Ubuntu 24.04 and Debian 12 pass with Node 24.19.0 | pending commit |
+| 2026-08-12 | Final matrix | uninterrupted `CI_SKIP_PULL=1 ./scripts/ci-local.sh all` | exit 0; core 777 tests (776 pass, 1 skip), deb/RPM/pacman/Nix, dependency matrix and signed upstream build all pass | pending commit |
+| 2026-08-12 | Final source audit | forbidden-reference `rg`, shell/JS/JSON syntax, feature README inventory, `git diff --check` | no active legacy-source/runtime paths outside intentional rejection tests and migration history; all static checks pass | pending commit |

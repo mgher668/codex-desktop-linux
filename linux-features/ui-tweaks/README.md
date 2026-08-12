@@ -125,7 +125,7 @@ This tweak is independently disabled by default:
 
 Config keys:
 
-- `enabled`: `true` applies the four current-DMG Suggested Prompts descriptors.
+- `enabled`: `true` applies the four current-package Suggested Prompts descriptors.
   `false` leaves the upstream Settings and Home behavior unchanged while other
   UI tweaks remain independently configurable.
 

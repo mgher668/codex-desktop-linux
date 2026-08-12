@@ -36,5 +36,5 @@ node --test linux-features/conversation-delete/test.js
 ```
 
 Known risk: endpoint and minified sidebar markers are private upstream
-contracts. Current-DMG drift leaves asset unchanged and emits warning; rebuild
+contracts. Current-package drift leaves the asset unchanged and emits a warning; rebuild
 with feature enabled after upstream refresh.
