@@ -49,20 +49,11 @@ pid_matches_install_target() {
 }
 
 find_running_install_target_pid() {
-    local electron_path="$INSTALL_DIR/electron"
-    local app_pid_file="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_APP_ID/app.pid"
+    local electron_path="$INSTALL_DIR/ChatGPT"
     local pid
     local proc_exe
 
     [ -e "$electron_path" ] || return 1
-
-    if [ -f "$app_pid_file" ]; then
-        pid="$(cat "$app_pid_file" 2>/dev/null || true)"
-        if pid_matches_install_target "$pid" "$electron_path"; then
-            echo "$pid"
-            return 0
-        fi
-    fi
 
     for proc_exe in /proc/[0-9]*/exe; do
         [ -e "$proc_exe" ] || continue

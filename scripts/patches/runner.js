@@ -61,7 +61,10 @@ function normalizeDiscoveredCorePatchDescriptors(options = {}) {
 }
 
 function corePatchDescriptors(options = {}) {
-  return normalizeDiscoveredCorePatchDescriptors(options);
+  if (process.env.CODEX_INCLUDE_LEGACY_CORE_PATCHES === "1") {
+    return normalizeDiscoveredCorePatchDescriptors(options);
+  }
+  return [];
 }
 
 function featurePatchDescriptors(options = {}) {
@@ -214,7 +217,7 @@ function patchExtractedApp(extractedDir, options = {}) {
     report.mainBundle = main?.mainBundle ?? null;
     report.target = main == null ? null : path.join(main.buildDir, main.mainBundle);
   }
-  if (main == null) {
+  if (main == null && patchDescriptors.some((descriptor) => descriptor.phase === PHASE_MAIN_BUNDLE)) {
     const reason = `Could not find main bundle in ${path.join(extractedDir, ".vite", "build")}`;
     console.warn(`WARN: ${reason} — skipping main-process UI patches`);
     recordMainProcessUiPatch(report, PATCH_STATUS_FAILED_REQUIRED, reason);
@@ -239,25 +242,27 @@ function patchExtractedApp(extractedDir, options = {}) {
     patchCompositionDelegates(patchDescriptors, assetContext);
   assetContext.report = report;
 
-  if (main != null) {
+  if (main != null && patchDescriptors.some((descriptor) => descriptor.phase === PHASE_MAIN_BUNDLE)) {
     const target = path.join(main.buildDir, main.mainBundle);
     const source = fs.readFileSync(target, "utf8");
     const { patchedSource, requiredCoreWarnings } = applyMainBundlePatches(source, assetContext, report);
     if (patchedSource !== source) {
       fs.writeFileSync(target, patchedSource, "utf8");
     }
-    recordPatch(
-      report,
-      "main-process-ui",
-      patchStatusFromChange(patchedSource !== source, requiredCoreWarnings, REQUIRED_UPSTREAM),
-      requiredCoreWarnings[0] ?? null,
-      {
-        phase: "main-bundle",
-        ciPolicy: REQUIRED_UPSTREAM,
-        sourceKind: "core",
-        ...(requiredCoreWarnings.length > 0 ? { warnings: [...requiredCoreWarnings] } : {}),
-      },
-    );
+    if (corePatchDescriptors({ corePatchRoot: options.corePatchRoot }).length > 0) {
+      recordPatch(
+        report,
+        "main-process-ui",
+        patchStatusFromChange(patchedSource !== source, requiredCoreWarnings, REQUIRED_UPSTREAM),
+        requiredCoreWarnings[0] ?? null,
+        {
+          phase: "main-bundle",
+          ciPolicy: REQUIRED_UPSTREAM,
+          sourceKind: "core",
+          ...(requiredCoreWarnings.length > 0 ? { warnings: [...requiredCoreWarnings] } : {}),
+        },
+      );
+    }
   }
 
   applyExtractedAppPatchDescriptors(

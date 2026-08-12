@@ -23,9 +23,9 @@ may be backfilled by the next milestone commit).
 
 | # | Milestone | Status | Tests / evidence | Commit SHA |
 |---|---|---|---|---|
-| 0 | Branch and exhaustive tracking record | complete | clean `main` at `4da3436f`; 86-ID official-ASAR probe and 34 manifests inventoried | pending commit |
-| 1 | Signed Linux-package source and extraction pipeline | pending | source-security suite; clean ASAR hash comparison | — |
-| 2 | Compact launcher and cross-format package payload | pending | launcher tests; deb/RPM/pacman/AppImage inspection | — |
+| 0 | Branch and exhaustive tracking record | complete | clean `main` at `4da3436f`; 86-ID official-ASAR probe and 34 manifests inventoried | `ea59dbc9` |
+| 1 | Signed Linux-package source and extraction pipeline | complete | source-security tests; local official-package build; ASAR SHA equality | pending commit |
+| 2 | Compact launcher and cross-format package payload | in progress | compact launcher implemented and `--diagnose` checked; package formats pending | — |
 | 3 | Core patch retirement and feature retargeting | pending | one-feature builds; retired/unknown-ID tests | — |
 | 4 | Signed-package updater and state migration | pending | updater release/download/promotion/rollback suite | — |
 | 5 | Nix and signed-package CI/watchdog | pending | Nix evaluation; both architecture workflows | — |
@@ -35,27 +35,27 @@ may be backfilled by the next milestone commit).
 
 ### Upstream and build
 
-- [ ] Map host architecture to `amd64`/`arm64` and reject all others.
-- [ ] Verify `InRelease` with the pinned Codex Linux Repository key and
+- [x] Map host architecture to `amd64`/`arm64` and reject all others.
+- [x] Verify `InRelease` with the pinned Codex Linux Repository key and
   fingerprint `3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4`.
-- [ ] Verify `Packages` size/SHA256 from `InRelease`.
-- [ ] Resolve and verify the indexed `chatgpt_<version>_<arch>.deb`.
-- [ ] Validate control name/version/architecture and mandatory Linux payload.
-- [ ] Extract data only; never run upstream maintainer scripts.
-- [ ] Support `./install.sh [path/to/chatgpt_*.deb]` and reject DMG inputs/env.
-- [ ] Stage `/usr/lib/chatgpt` directly, including native modules, `codex`, `rg`,
+- [x] Verify `Packages` size/SHA256 from `InRelease`.
+- [x] Resolve and verify the indexed `chatgpt_<version>_<arch>.deb`.
+- [x] Validate control name/version/architecture and mandatory Linux payload.
+- [x] Extract data only; never run upstream maintainer scripts.
+- [x] Support `./install.sh [path/to/chatgpt_*.deb]` and reject DMG inputs/env.
+- [x] Stage `/usr/lib/chatgpt` directly, including native modules, `codex`, `rg`,
   code-mode host, locales, libraries, and Owl metadata.
-- [ ] Skip ASAR extraction/repack when no ASAR feature is enabled.
-- [ ] Emit build-info schema v2 `upstreamLinuxPackage` metadata.
+- [x] Skip ASAR extraction/repack when no ASAR feature is enabled.
+- [x] Emit build-info schema v2 `upstreamLinuxPackage` metadata.
 - [ ] Remove DMG extraction, Electron download, native rebuild, managed runtime,
   webview server, external CLI repair, and duplicate bundled-resource staging.
 
 ### Launcher and packages
 
-- [ ] Replace the generated launcher with a compact official-runtime wrapper.
-- [ ] Keep declarative env/prelaunch/electronArgs/launcher/coldStart/afterExit hooks.
-- [ ] Pass URI/CLI arguments through unchanged; wait only for after-exit hooks.
-- [ ] Remove custom single-instance/warm-start/webview/process supervision.
+- [x] Replace the generated launcher with a compact official-runtime wrapper.
+- [x] Keep declarative env/prelaunch/electronArgs/launcher/coldStart/afterExit hooks.
+- [x] Pass URI/CLI arguments through unchanged; wait only for after-exit hooks.
+- [x] Remove custom single-instance/warm-start/webview/process supervision.
 - [ ] Preserve `codex-desktop` identity and `/opt/codex-desktop` layout.
 - [ ] Retarget AppArmor to `/opt/codex-desktop/ChatGPT` for system packages.
 - [ ] Do not automatically add `--no-sandbox` to AppImage.
@@ -239,4 +239,5 @@ or new feature must also keep its adjacent README and feature-local tests.
 | Date | Scope | Command / environment | Result | Commit |
 |---|---|---|---|---|
 | 2026-08-12 | Baseline inventory | official 26.803.81509 ASAR patch probe | 17 upstream-applied, 64 applied, 5 disabled; 86 total | pre-migration |
-
+| 2026-08-12 | Source security | `node --test scripts/lib/upstream-linux-package.test.js` | 4/4 pass: valid/tampered/wrong-key signature, release/package hashes and metadata | pending commit |
+| 2026-08-12 | Clean baseline | local official `chatgpt_26.803.81509_amd64.deb` with empty feature config | upstream/output ASAR SHA `87a32f5d…ff9ff66`; launcher diagnose passes; schema v2 emitted | pending commit |

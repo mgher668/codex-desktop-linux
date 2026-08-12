@@ -1428,6 +1428,10 @@ function main() {
     }
     return;
   }
+  if (command === "--patch-descriptor-count") {
+    process.stdout.write(`${loadLinuxFeaturePatchDescriptors().length}\n`);
+    return;
+  }
   if (command === "--features-json") {
     process.stdout.write(`${JSON.stringify(featuresJsonSummary(), null, 2)}\n`);
     return;
@@ -1436,7 +1440,7 @@ function main() {
     process.stdout.write(`${linuxFeaturesRoot()}\n`);
     return;
   }
-  console.error("Usage: linux-features.js --enabled | --features-json | --features-root | --stage-install <install-dir> | --staged-files-json <install-dir> | --stage-hooks | --cleanup-hooks | --package-hooks <format> <app-dir> | --stage-package-resources <format> <package-root> <app-dir> | --restore-package-resource-permissions <format> <package-root> <app-dir> | --package-dependencies <format> <app-dir> | --package-files <format> <app-dir>");
+  console.error("Usage: linux-features.js --enabled | --patch-descriptor-count | --features-json | --features-root | --stage-install <install-dir> | --staged-files-json <install-dir> | --stage-hooks | --cleanup-hooks | --package-hooks <format> <app-dir> | --stage-package-resources <format> <package-root> <app-dir> | --restore-package-resource-permissions <format> <package-root> <app-dir> | --package-dependencies <format> <app-dir> | --package-files <format> <app-dir>");
   process.exit(1);
 }
 
