@@ -56,6 +56,26 @@ The launcher only establishes `codex-desktop` desktop identity, loads feature
 environment/prelaunch/argument/lifecycle hooks, forwards arguments, and waits
 when an after-exit hook exists.
 
+The official Browser and Chrome plugins, their Linux extension host, and the
+plugin app-server protocol are upstream runtime components. The former generic
+Browser/Chrome Linux port layer is not part of the architecture. A separate
+`thorium-chrome-plugin` feature remains opt-in because Thorium is not present in
+the official browser registry.
+
+## Repository layers
+
+| Layer | Primary owners |
+|---|---|
+| Source trust and extraction | `scripts/lib/upstream-linux-package.*` |
+| Candidate transaction and metadata | `install.sh`, `scripts/lib/install-helpers.sh`, `build-info.*` |
+| Thin runtime wrapper | `launcher/start.sh.template` |
+| Optional feature framework | `scripts/lib/linux-features.*`, `linux-features/` |
+| ASAR descriptors and reports | `scripts/patches/`, `scripts/patch-linux-window-ui.js`, `scripts/lib/patch-report.js` |
+| Cross-format payload assembly | `scripts/lib/package-common.sh`, `packaging/` |
+| Native update state machine | `updater/src/`, `packaging/update-builder/` |
+| Reproducible Nix packaging | `flake.nix`, `nix/` |
+| Upstream drift automation | `scripts/automation/upstream-linux-package-watchdog/`, `.github/workflows/upstream-build-app.yml` |
+
 ## Patches and features
 
 `scripts/patches/runner.js` composes an empty core registry with descriptors
@@ -67,6 +87,12 @@ The committed feature config is empty. Features stage declarative resources,
 runtime hooks, package hooks, or narrowly scoped ASAR descriptors. Native helper
 crates are built when producing this distribution, not during every upstream
 runtime refresh.
+
+Feature staging has separate application and native-package phases. App
+resources stay inside the app tree; package resources install udev, systemd,
+policy, or helper files only through validated package targets. The enabled
+manifest snapshot is recorded in build metadata so packaging and updater
+rebuilds cannot silently use a different selection.
 
 ## Identity and data
 
@@ -90,3 +116,24 @@ version/architecture/SHA cache, runs the minimal packaged update-builder, and
 builds a sibling candidate. Atomic promotion happens only after the app exits.
 The previous managed artifact is retained for rollback. Old incompatible state
 is reset without deleting installed or rollback packages.
+
+## Generated state
+
+`codex-app/`, side-by-side candidates, transactional backups, `dist/`,
+`dist-next/`, Cargo `target/`, patch reports, and local feature configuration
+are generated state. They are never source owners and should not be edited or
+committed. See [Generated and runtime notes](agents/generated-and-runtime-notes.md).
+
+## Architecture invariants
+
+- The latest signed stable upstream package is the only supported baseline.
+- The clean ASAR hash equals the official package hash.
+- Upstream package scripts and APT source configuration never enter the custom
+  output.
+- `codex-desktop` package identity and **ChatGPT Community** display identity
+  remain distinct from official `chatgpt` / **ChatGPT**.
+- Optional behavior stays disabled in committed configuration.
+- A core patch needs evidence of a mandatory baseline failure and a required
+  regression test.
+- Package/update/launcher/framework changes are cross-format unless proven
+  otherwise.

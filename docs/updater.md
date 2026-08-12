@@ -51,22 +51,89 @@ the installed package and recorded rollback artifact are preserved.
 
 ```bash
 codex-update-manager status
+codex-update-manager status --json
+codex-update-manager diagnose
+codex-update-manager diagnose --json
 codex-update-manager check-now
-codex-update-manager build-update
 codex-update-manager install-ready
-codex-update-manager retry-install
 codex-update-manager rollback
 ```
+
+- `status` shows the persisted candidate, installed, and rollback state.
+- `diagnose` adds runtime paths, configuration, process-liveness, and package
+  readiness details suitable for bug reports.
+- `check-now` performs a signed release check immediately. When a newer release
+  is available, it drives the normal download/build state machine.
+- `install-ready` retries installation of an already prepared candidate after
+  the application is closed or a package-manager problem is fixed.
+- `rollback` installs the immediately previous retained managed package and
+  blocks the rejected candidate tuple from immediate reinstallation.
 
 The service is controlled with:
 
 ```bash
 systemctl --user enable --now codex-update-manager.service
+systemctl --user status codex-update-manager.service --no-pager
 journalctl --user -u codex-update-manager.service
 ```
 
+To trigger one foreground daemon pass while debugging, stop the service and
+run `codex-update-manager daemon` from a terminal. Do not run two daemon
+instances against the same state directory.
+
 Update interaction is exposed through the service, CLI, desktop actions, and
 notification actions. The upstream ASAR is not patched to add an update button.
+
+## State and logs
+
+The manager follows XDG locations:
+
+```text
+${XDG_CONFIG_HOME:-~/.config}/codex-update-manager
+${XDG_STATE_HOME:-~/.local/state}/codex-update-manager
+${XDG_CACHE_HOME:-~/.cache}/codex-update-manager
+```
+
+Use `status --json` and `diagnose --json` instead of editing persisted JSON.
+Candidate packages are content-addressed. Conservative cache cleanup retains
+the installed source, current candidate, and immediately previous rollback
+artifact.
+
+The authoritative service log is the user journal:
+
+```bash
+journalctl --user -u codex-update-manager.service -n 200 --no-pager
+journalctl --user -u codex-update-manager.service -f
+```
+
+## Manual-update packages
+
+To build `codex-desktop` without the service and update-builder:
+
+```bash
+PACKAGE_WITH_UPDATER=0 make package
+make install
+```
+
+Update that installation from a trusted checkout with:
+
+```bash
+PACKAGE_WITH_UPDATER=0 make update-native
+```
+
+AppImage, direct `codex-app/`, and Nix outputs follow their own replacement
+workflow and do not use this mutable package updater.
+
+## Recovery
+
+If state says `WaitingForAppExit`, fully close both official **ChatGPT** and
+**ChatGPT Community**; the shared upstream process name/profile can otherwise
+keep the guard active. If installation failed, fix the reported package-manager
+or polkit problem and run `install-ready`.
+
+Use `rollback` only after confirming the retained artifact is the version you
+want. `make clean-state` deletes updater state and cache, including the managed
+rollback path; it is not a normal troubleshooting step.
 
 ## Validation scenarios
 

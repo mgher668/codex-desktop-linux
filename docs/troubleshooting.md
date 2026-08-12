@@ -25,12 +25,43 @@ journalctl --user -u codex-update-manager.service --no-pager
 The diagnostic checks the official executable, ASAR, bundled `codex`, `rg`, and
 code-mode host. It also warns when Chromium sandbox prerequisites are missing.
 
+Also confirm that the installed package architecture matches the machine and
+that no official ChatGPT process is already holding the shared profile lock:
+
+```bash
+uname -m
+pgrep -a -f '(/ChatGPT|/chatgpt)' || true
+```
+
+Do not start the underlying `ChatGPT` binary directly for normal use. The
+`codex-desktop` wrapper supplies the correct desktop identity and enabled
+feature hooks.
+
 ## Chromium sandbox or AppArmor
 
 Prefer a native package, which installs an AppArmor profile adapted to
 `/opt/codex-desktop/ChatGPT`. AppImage intentionally refuses to disable the
 sandbox automatically. Enable unprivileged user namespaces according to your
 distribution policy or use the native package.
+
+If a native package was copied between systems, verify its adapted profile and
+reload AppArmor according to the distribution's tooling. Never solve a
+packaging error by globally disabling Chromium sandboxing.
+
+## Duplicate or stale desktop entries
+
+The official package should appear as **ChatGPT**. This project should appear
+as **ChatGPT Community** with a blue `C` mark. Confirm the selected entry:
+
+```bash
+grep -H '^Name=' \
+  /usr/share/applications/chatgpt.desktop \
+  /usr/share/applications/codex-desktop.desktop 2>/dev/null || true
+```
+
+After upgrading from an older package, refresh the desktop database or log out
+and in if your shell keeps stale names or icons. Do not rename the official
+desktop file to work around a shell cache.
 
 ## Official and custom apps interfere
 
@@ -57,6 +88,11 @@ If Browser was already loaded before that migration ran, fully exit every
 ChatGPT process, fully exit Chrome/Chromium, start **ChatGPT Community**, and
 then reopen the browser. Arbitrary plugin caches and user-authored plugins are
 never rewritten.
+
+Clearing the entire browser profile or all Codex plugin caches is not a normal
+repair step. The official Browser/Chrome integration is already present in the
+Linux payload; this migration only replaces known snapshots created by the old
+community port.
 
 If the legacy snapshot predates the recognized migration markers, remove only
 the two re-creatable upstream-bundled caches, then restart Community followed
@@ -90,8 +126,36 @@ systemctl --user status codex-update-manager.service
 ```
 
 `WaitingForAppExit` is expected: close all ChatGPT/Codex desktop processes. For
-a failed privileged install, use the explicit retry command after fixing the
-reported package-manager issue. Roll back with `codex-update-manager rollback`.
+a failed privileged install, run `codex-update-manager install-ready` after
+fixing the reported package-manager issue. Roll back with
+`codex-update-manager rollback`.
+
+Collect a useful updater report with:
+
+```bash
+codex-update-manager diagnose --json
+journalctl --user -u codex-update-manager.service -n 200 --no-pager
+```
+
+## Native package build or install fails
+
+Start by separating staging from packaging:
+
+```bash
+make build-app
+make package
+```
+
+If staging passes but packaging fails, confirm the distribution builder is
+installed and inspect the final lines for the selected deb/RPM/pacman command.
+If `sudo`-created files from an old checkout block cleanup, use the exact backup
+procedure below; do not rerun the whole build as root.
+
+For constrained systems, limit parallel compilation and compression:
+
+```bash
+MAX_BUILD_THREADS=2 make install-native
+```
 
 ## Clean rebuild
 
@@ -105,6 +169,10 @@ make package
 
 Do not delete the updater rollback artifact unless you intentionally give up
 the recovery path.
+
+To remove only package artifacts, use `make clean-dist`. `make clean-state` is
+more destructive: it removes updater config/state/cache and therefore its
+managed rollback information.
 
 ## Old app backup cannot be removed
 

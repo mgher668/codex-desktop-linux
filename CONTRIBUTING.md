@@ -13,6 +13,21 @@ alternate source format or reconstruct parts of the upstream runtime.
 **ChatGPT Community** is the desktop display name;
 `codex-desktop` remains the package, executable, and path identity.
 
+## Ways to contribute
+
+- Reproduce and document a regression against the current official stable
+  Linux package.
+- Improve a disabled-by-default Linux feature and its adjacent tests.
+- Validate deb, RPM, pacman, AppImage, Nix, Wayland, X11, `amd64`, or `arm64`.
+- Improve installer, updater, packaging, or source-security coverage.
+- Correct documentation where it disagrees with current commands or runtime
+  ownership.
+
+For bug reports, include the distribution, desktop session, architecture,
+official package version, enabled feature IDs, reproduction steps, and relevant
+diagnostic or patch reports. Account rollouts and unrelated OpenAI service
+failures are not repository bugs.
+
 ## Before editing
 
 - Read `AGENTS.md` and the relevant architecture document.
@@ -57,6 +72,26 @@ The build requires Node.js 20+, npm, Python 3, curl, `gpgv`, `dpkg-deb`,
 SHA-256 utilities, tar, make, and a C/C++ toolchain. Rust is required for the
 updater and retained native feature helpers.
 
+Create a focused branch from current `main`. Avoid mixing generated artifacts,
+format-only churn, dependency refreshes, and unrelated cleanup into a behavior
+change.
+
+## Engineering standards
+
+- Fail closed at trust and promotion boundaries.
+- Prefer semantic descriptor matching and byte-identical drift tests over
+  pinning minified chunk names or identifiers.
+- Make optional features self-contained. Every feature needs `feature.json`,
+  `README.md`, explicit `defaultEnabled: false`, and tests for its active
+  contract.
+- Prefer declarative resources and runtime/package hooks. Keep `stage.sh` only
+  when the operation cannot be represented safely in the manifest.
+- Quote paths, validate destructive targets, and avoid wildcard cleanup.
+- Keep Rust formatted and clippy-clean, with explicit persisted-state and
+  filesystem transaction boundaries.
+- Do not add dependencies when an existing helper or standard tool covers the
+  requirement.
+
 ## Pull requests
 
 Describe the problem, user-visible behavior, affected package formats/features,
@@ -66,6 +101,11 @@ authorized automation apply the taxonomy from `docs/label-governance.md`.
 Prefer a regression test before the fix. Keep shell defensive, Rust idiomatic,
 interfaces small, and dependencies explicit. Never weaken signature, hash,
 sandbox, candidate-promotion, or running-app safety checks to make a test pass.
+
+A good pull request includes the problem and solution, user-visible behavior,
+affected architectures/formats/features, exact validation, and any untested
+manual matrix or security/rollback risk. Keep commits reviewable. Update public
+documentation when a command, option, invariant, or ownership boundary changes.
 
 ## Validation
 
@@ -86,3 +126,8 @@ Package payload changes should inspect deb, RPM, pacman, AppImage, and Nix as
 applicable. Feature changes require the adjacent feature test plus a build with
 that feature alone. Upstream-source changes require the complete trust-failure
 matrix.
+
+Documentation-only changes should at least check Markdown links, documented
+Make targets and feature IDs against source, and run `git diff --check`. Do not
+restore historical DMG/runtime-port instructions as active guidance; historical
+context belongs in `CHANGELOG.md` or a migration record.

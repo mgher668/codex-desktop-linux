@@ -52,6 +52,27 @@ Use `stageHook` only when the operation cannot be represented declaratively.
 Feature patching supports only `entrypoints.patchDescriptors`; removed legacy
 entrypoint aliases are rejected.
 
+Manifest fields:
+
+| Field | Purpose |
+|---|---|
+| `id` | Stable configuration ID matching the directory name |
+| `title`, `description` | User-facing wizard and documentation text |
+| `defaultEnabled` | Must be `false` for every repository and local feature |
+| `entrypoints.patchDescriptors` | Optional ASAR descriptor module |
+| `entrypoints.stageHook` | Last-resort app staging script |
+| `resources` | Declarative files copied into the app tree |
+| `runtimeHooks` | Launcher environment and lifecycle extensions |
+| `packageResources` | Declarative files outside the app tree in native packages |
+| `packageDependencies` | deb/RPM/pacman runtime dependency mapping |
+| `packageHooks` | Narrow native-package staging operations |
+| `requires` | Other feature IDs that must be enabled |
+| `conflicts` | Feature IDs that cannot be enabled together |
+
+Unknown keys and unsafe paths fail validation. A manifest title or description
+does not replace the adjacent README; document setup, settings, side effects,
+cleanup, supported sessions/architectures, and tests there.
+
 ## Lifecycle
 
 1. The installer validates enabled manifests and relationships.
@@ -68,6 +89,24 @@ The enabled feature snapshot is recorded in build metadata and must match at
 package time. The update-builder includes only enabled descriptors/resources
 and repeats the same validation. Drift in an enabled feature rejects the
 candidate; disabled features are not probed.
+
+## Local features
+
+User-private modules can be placed under the gitignored
+`linux-features/local/<id>/` directory:
+
+```text
+linux-features/local/my-feature/
+├── feature.json
+├── README.md
+├── patch.js
+└── test.js
+```
+
+They use the same validation and disabled-by-default contract as repository
+features. Keep source and resources inside the feature directory, use a unique
+ID, and do not rely on generated `codex-app/` paths. Local features are included
+in the installed package/update-builder only when enabled.
 
 ## ASAR descriptors
 
@@ -134,6 +173,35 @@ bits are rejected.
 Native Rust helpers are built once as project release components. They must not
 be rebuilt merely because a new official application package appeared. Delete
 an orphan helper crate when its last feature consumer is removed.
+
+## Testing and drift
+
+A retained feature should have:
+
+1. manifest validation tests;
+2. idempotent descriptor/resource staging tests;
+3. byte-identical failure tests for missing or ambiguous semantic anchors;
+4. a build with that feature enabled alone against the current official ASAR;
+5. runtime acceptance for the Linux sessions, compositors, services, or devices
+   it claims to support.
+
+Run the framework and all adjacent Node tests with:
+
+```bash
+node --test scripts/lib/linux-features.test.js linux-features/*/test.js
+```
+
+An `applied-with-warnings` or optional skip is not evidence that a feature
+works. Required feature surfaces must apply cleanly before the candidate is
+accepted.
+
+## Retirement policy
+
+Remove a feature only when the official Linux runtime demonstrably replaces its
+behavior or the project intentionally drops the product surface. Delete its
+descriptors, helpers, tests, package/Nix/watchdog references, and documentation
+together. Add the exact old ID to the retired registry so existing local
+configs migrate silently; do not make arbitrary unknown IDs valid.
 
 ## Design rule
 

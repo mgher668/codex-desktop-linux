@@ -49,6 +49,22 @@ Every repository feature and local feature must contain both `feature.json` and
 `README.md`. Prefer declarative resources and runtime/package hooks over a
 feature `stage.sh`.
 
+## Editing guidance
+
+- Search for all consumers before removing a descriptor, helper crate,
+  package resource, workflow, or document.
+- Treat exact minified filenames and symbols as drift-prone. Prefer semantic,
+  unique anchors with fail-closed tests against the current official ASAR.
+- Keep feature changes inside their feature directory unless a genuinely
+  generic framework extension is required.
+- Keep update-builder contents minimal and consumer-driven. Enabled feature
+  resources and prebuilt helpers must be present; the full repository and
+  Cargo workspaces must not be.
+- Preserve user changes in dirty worktrees and never repair generated output by
+  editing it in place.
+- Update English and Chinese top-level usage when installation, removal,
+  feature IDs, commands, or public identity changes.
+
 ## Runtime invariants
 
 - The official `ChatGPT`, Electron libraries, native modules, `codex`, `rg`,
@@ -108,3 +124,17 @@ Package/update/launcher/framework changes are cross-format unless explicitly
 scoped. When changing payloads, inspect all supported output formats. Refresh
 Nix pins through `scripts/ci/update-official-linux-pins.sh`, never by inventing
 hashes.
+
+## Change expectations
+
+- Source-security changes cover valid and invalid signatures, wrong keys,
+  index/package hash failures, metadata mismatch, unsupported architecture, and
+  incomplete payload.
+- Feature changes run the adjacent test and an official-bundle build with that
+  feature alone.
+- Package payload changes inspect deb, RPM, pacman, AppImage, and Nix on the
+  applicable architectures.
+- Updater changes cover interrupted work, app-running guards, atomic promotion,
+  rollback, cache cleanup, and persisted-state migration.
+- Documentation changes verify relative links, documented Make/CLI commands,
+  feature IDs, and `git diff --check`.
