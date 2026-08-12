@@ -77,7 +77,7 @@ test("non-Debian package formats map the official runtime libraries", () => {
     assert.match(pacman, new RegExp(`'${packageName}'`));
   }
   assert.match(rpm, /Requires:.*\bxz\b/);
-  for (const packageName of ["graphite2", "openssl", "xz"]) {
+  for (const packageName of ["graphite2", "libglvnd", "openssl", "xz"]) {
     assert.match(flake, new RegExp(`\\b${packageName}\\b`));
   }
 });
