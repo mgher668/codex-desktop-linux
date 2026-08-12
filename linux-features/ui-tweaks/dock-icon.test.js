@@ -388,6 +388,15 @@ function createDesktopSyncFixture() {
         "apps",
         `${appId}-dock-${selection}.png`,
       ),
+    managedIconOwnership: (selection, appId = "codex-desktop") =>
+      `${path.join(
+        dataHome,
+        "icons",
+        "hicolor",
+        "256x256",
+        "apps",
+        `${appId}-dock-${selection}.png`,
+      )}.codex-linux-sha256`,
     secondIcon,
     tempDir,
   };
@@ -422,6 +431,10 @@ test("desktop synchronization updates a managed KDE launcher atomically", () => 
     const first = runDesktopSync("chatgpt", fixture.firstIcon, fixture.env);
     assert.equal(first.status, 0, first.stderr);
     assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), "first-icon");
+    assert.match(
+      fs.readFileSync(fixture.managedIconOwnership("chatgpt"), "utf8"),
+      /^[0-9a-f]{64}\n$/,
+    );
     assert.match(
       fs.readFileSync(fixture.managedDesktop, "utf8"),
       /^X-Codex-Linux-Dock-Icon-SHA256=[0-9a-f]{64}$/m,
@@ -496,6 +509,8 @@ test("prelaunch cleanup removes only marker-owned Dock launcher artifacts", () =
     assert.equal(fs.existsSync(fixture.managedDesktop), false);
     assert.equal(fs.existsSync(fixture.managedIcon("chatgpt")), false);
     assert.equal(fs.existsSync(fixture.managedIcon("codex-dark")), false);
+    assert.equal(fs.existsSync(fixture.managedIconOwnership("chatgpt")), false);
+    assert.equal(fs.existsSync(fixture.managedIconOwnership("codex-dark")), false);
   } finally {
     fs.rmSync(fixture.tempDir, { recursive: true, force: true });
   }
@@ -589,6 +604,35 @@ test("sync and cleanup preserve user edits to a previously managed launcher", ()
       assert.equal(cleanup.status, 0, `${field}: ${cleanup.stderr}`);
       assert.equal(fs.readFileSync(fixture.managedDesktop, "utf8"), customizedWithField, field);
       assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), "first-icon");
+    } finally {
+      fs.rmSync(fixture.tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("sync and cleanup preserve pre-existing and modified icon resources", () => {
+  for (const kind of ["pre-existing", "modified"]) {
+    const fixture = createDesktopSyncFixture();
+    const appDir = path.join(fixture.tempDir, "app");
+    try {
+      fs.mkdirSync(appDir, { recursive: true });
+      fs.mkdirSync(path.dirname(fixture.managedIcon("chatgpt")), { recursive: true });
+      if (kind === "pre-existing") {
+        fs.writeFileSync(fixture.managedIcon("chatgpt"), "user-icon");
+      } else {
+        assert.equal(runDesktopSync("chatgpt", fixture.firstIcon, fixture.env).status, 0);
+        fs.writeFileSync(fixture.managedIcon("chatgpt"), "user-modified-icon");
+      }
+
+      const before = fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8");
+      const sync = runDesktopSync("chatgpt", fixture.secondIcon, fixture.env);
+      assert.equal(sync.status, 0, `${kind}: ${sync.stderr}`);
+      assert.match(sync.stderr, /not an unchanged managed resource/);
+      assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), before, kind);
+
+      const cleanup = runDesktopCleanup(appDir, fixture.env);
+      assert.equal(cleanup.status, 0, `${kind}: ${cleanup.stderr}`);
+      assert.equal(fs.readFileSync(fixture.managedIcon("chatgpt"), "utf8"), before, kind);
     } finally {
       fs.rmSync(fixture.tempDir, { recursive: true, force: true });
     }

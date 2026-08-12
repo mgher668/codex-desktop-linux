@@ -24,6 +24,28 @@ managed_icons=(
     "$legacy_icon_target"
 )
 
+icon_ownership_path() {
+    printf '%s.codex-linux-sha256\n' "$1"
+}
+
+managed_icon_is_owned() {
+    local icon="$1"
+    local actual_digest
+    local expected_digest
+    local ownership
+    ownership="$(icon_ownership_path "$icon")"
+    [ -f "$icon" ] && [ ! -L "$icon" ] || return 1
+    [ -f "$ownership" ] && [ ! -L "$ownership" ] || return 1
+    IFS= read -r expected_digest < "$ownership" || return 1
+    case "$expected_digest" in
+        *[!0-9a-f]*|'') return 1 ;;
+    esac
+    [ "${#expected_digest}" -eq 64 ] || return 1
+    [ "$(wc -l < "$ownership")" -eq 1 ] || return 1
+    actual_digest="$(sha256sum "$icon" | awk '{print $1}')"
+    [ "$actual_digest" = "$expected_digest" ]
+}
+
 refresh_desktop_database() {
     if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then
         command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null 2>&1 || true
@@ -57,6 +79,7 @@ managed_desktop_is_owned() {
 
 cleanup_managed_desktop() {
     local icon
+    local ownership
     local changed=0
     managed_desktop_is_owned || return 0
     if rm -f -- "$desktop_target"; then
@@ -66,8 +89,13 @@ cleanup_managed_desktop() {
         return 0
     fi
     for icon in "${managed_icons[@]}"; do
-        if [ -f "$icon" ] && [ ! -L "$icon" ]; then
-            rm -f -- "$icon" || echo "WARN: Could not remove managed Dock icon resource: $icon" >&2
+        ownership="$(icon_ownership_path "$icon")"
+        if managed_icon_is_owned "$icon"; then
+            if rm -f -- "$icon" "$ownership"; then
+                :
+            else
+                echo "WARN: Could not remove managed Dock icon resource: $icon" >&2
+            fi
         fi
     done
     [ "$changed" -eq 0 ] || refresh_desktop_database
@@ -90,6 +118,7 @@ case "$selection" in
     *) exit 0 ;;
 esac
 icon_target="$icons_dir/$app_id-dock-$selection.png"
+icon_ownership_target="$(icon_ownership_path "$icon_target")"
 
 desktop_source_matches_identity() {
     local source="$1"
@@ -175,13 +204,23 @@ if grep -Eq '^Exec=(AppRun|.*[[:space:]]AppRun)([[:space:]]|$)' "$desktop_source
 fi
 
 mkdir -p "$applications_dir" "$icons_dir"
+if [ -e "$icon_target" ] || [ -L "$icon_target" ] ||
+   [ -e "$icon_ownership_target" ] || [ -L "$icon_ownership_target" ]; then
+    if ! managed_icon_is_owned "$icon_target"; then
+        echo "WARN: Dock icon target is not an unchanged managed resource; leaving launchers unchanged: $icon_target" >&2
+        exit 0
+    fi
+fi
 desktop_content_tmp="$(mktemp "$applications_dir/.$app_id.desktop-content.XXXXXX")"
 desktop_tmp="$(mktemp "$applications_dir/.$app_id.desktop.XXXXXX")"
 icon_tmp="$(mktemp "$icons_dir/.$app_id-dock-selection.XXXXXX")"
-trap 'rm -f -- "$desktop_content_tmp" "$desktop_tmp" "$icon_tmp"' EXIT
+icon_ownership_tmp="$(mktemp "$icons_dir/.$app_id-dock-selection-sha256.XXXXXX")"
+trap 'rm -f -- "$desktop_content_tmp" "$desktop_tmp" "$icon_tmp" "$icon_ownership_tmp"' EXIT
 cat > "$icon_tmp"
 [ -s "$icon_tmp" ] || exit 0
 chmod 0644 "$icon_tmp"
+sha256sum "$icon_tmp" | awk '{print $1}' > "$icon_ownership_tmp"
+chmod 0600 "$icon_ownership_tmp"
 CODEX_DOCK_APPIMAGE_EXEC="$appimage_exec" awk -v icon="$icon_target" \
     -v legacy_marker="$legacy_marker" -v marker_prefix="$marker_prefix" '
     BEGIN { appimage_exec = ENVIRON["CODEX_DOCK_APPIMAGE_EXEC"] }
@@ -209,13 +248,17 @@ chmod 0644 "$desktop_tmp"
 changed=0
 if [ ! -f "$icon_target" ] || ! cmp -s "$icon_tmp" "$icon_target"; then
     mv -f -- "$icon_tmp" "$icon_target"
+    mv -f -- "$icon_ownership_tmp" "$icon_ownership_target"
     changed=1
+else
+    rm -f -- "$icon_tmp"
+    rm -f -- "$icon_ownership_tmp"
 fi
 if [ ! -f "$desktop_target" ] || ! cmp -s "$desktop_tmp" "$desktop_target"; then
     mv -f -- "$desktop_tmp" "$desktop_target"
     changed=1
 fi
-if [ -f "$legacy_icon_target" ] && [ ! -L "$legacy_icon_target" ]; then
-    rm -f -- "$legacy_icon_target"
+if managed_icon_is_owned "$legacy_icon_target"; then
+    rm -f -- "$legacy_icon_target" "$(icon_ownership_path "$legacy_icon_target")"
 fi
 [ "$changed" -eq 0 ] || refresh_desktop_database

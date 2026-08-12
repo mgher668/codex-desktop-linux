@@ -65,7 +65,8 @@ payload. The desktop helper writes only a full-state-hash-owned launcher derived
 from an identity-matching packaged entry. AppImage launch commands are rewritten
 to the persistent AppImage path instead of the temporary mounted `AppRun`.
 The prelaunch hook removes only an unchanged managed override after the nested
-tweak is disabled; any user edit preserves the launcher and its icons.
+tweak is disabled. Desktop entries and icon files have separate content-hash
+ownership proofs, so any user edit or pre-existing icon preserves that resource.
 
 This tweak is independently disabled by default:
 
