@@ -28,6 +28,7 @@ jobs:
           bash -n scripts/build-deb.sh scripts/build-rpm.sh scripts/build-pacman.sh scripts/build-appimage.sh
       - name: Node tests
         run: |
+          node --test scripts/ci/*.test.js
           node --test scripts/lib/upstream-linux-package.test.js
           node --test scripts/lib/package-common.test.js
           node --check scripts/ci/verify-official-linux-features.js

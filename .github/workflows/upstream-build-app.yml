@@ -1,26 +1,8 @@
 name: Official Linux package build
 
 on:
-  schedule:
-    - cron: '30 * * * *'
   workflow_dispatch:
   pull_request:
-    paths:
-      - install.sh
-      - Makefile
-      - assets/openai-codex-linux-repository-key.gpg.base64
-      - launcher/**
-      - scripts/build-*.sh
-      - scripts/lib/package-common.sh
-      - scripts/lib/upstream-linux-package.*
-      - scripts/automation/upstream-linux-package-watchdog/**
-      - scripts/patches/**
-      - linux-features/**
-      - packaging/**
-      - updater/**
-      - flake.nix
-      - nix/**
-      - .github/workflows/upstream-build-app.yml
   push:
     branches: [main]
     paths:
@@ -38,6 +20,7 @@ on:
       - updater/**
       - flake.nix
       - nix/**
+      - .github/workflows/upstream-build-app.yml
 
 permissions:
   contents: read
@@ -101,6 +84,7 @@ jobs:
         with:
           name: official-linux-${{ matrix.architecture }}-metadata
           path: upstream/${{ matrix.architecture }}.json
+          retention-days: 7
 
   package-matrix:
     needs: signed-baseline
@@ -141,3 +125,22 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/automation/upstream-linux-package-watchdog/watchdog.js --json
+
+  official-linux-gate:
+    if: ${{ always() }}
+    needs:
+      - signed-baseline
+      - package-matrix
+      - watchdog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every official Linux validation job
+        env:
+          SIGNED_BASELINE_RESULT: ${{ needs.signed-baseline.result }}
+          PACKAGE_MATRIX_RESULT: ${{ needs.package-matrix.result }}
+          WATCHDOG_RESULT: ${{ needs.watchdog.result }}
+        run: |
+          test "$SIGNED_BASELINE_RESULT" = success
+          test "$PACKAGE_MATRIX_RESULT" = success
+          test "$WATCHDOG_RESULT" = success
