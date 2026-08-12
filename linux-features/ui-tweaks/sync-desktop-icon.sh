@@ -35,7 +35,7 @@ managed_desktop_is_owned() {
     grep -qxF "$marker" "$desktop_target" || return 1
     icon_value="$(awk '/^Icon=/{sub(/^Icon=/, ""); print; exit}' "$desktop_target")"
     case "$icon_value" in
-        "$icons_dir/$app_id-dock-chatgpt.png"|"$icons_dir/$app_id-dock-codex-dark.png"|"$icons_dir/$app_id-dock-codex-light.png") ;;
+        "$icons_dir/$app_id-dock-chatgpt.png"|"$icons_dir/$app_id-dock-codex-dark.png"|"$icons_dir/$app_id-dock-codex-light.png"|"$legacy_icon_target") ;;
         *) return 1 ;;
     esac
 }

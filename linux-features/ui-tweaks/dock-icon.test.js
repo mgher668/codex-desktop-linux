@@ -486,6 +486,38 @@ test("prelaunch cleanup removes only marker-owned Dock launcher artifacts", () =
   }
 });
 
+test("prelaunch cleanup removes the marker-owned legacy Dock launcher", () => {
+  const fixture = createDesktopSyncFixture();
+  const appDir = path.join(fixture.tempDir, "app");
+  const legacyIcon = fixture.managedIcon("selection");
+  try {
+    fs.mkdirSync(path.dirname(fixture.managedDesktop), { recursive: true });
+    fs.mkdirSync(path.dirname(legacyIcon), { recursive: true });
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(legacyIcon, "legacy-icon");
+    fs.writeFileSync(
+      fixture.managedDesktop,
+      [
+        "[Desktop Entry]",
+        "Name=ChatGPT Community",
+        `Icon=${legacyIcon}`,
+        "X-Codex-Linux-Dock-Icon=1",
+      ].join("\n"),
+    );
+
+    const cleaned = runDesktopCleanup(appDir, fixture.env);
+
+    assert.equal(cleaned.status, 0, cleaned.stderr);
+    assert.equal(fs.existsSync(fixture.managedDesktop), false);
+    assert.equal(fs.existsSync(legacyIcon), false);
+    assert.deepEqual(fs.readFileSync(fixture.callsPath, "utf8").trim().split("\n"), [
+      "kbuildsycoca6",
+    ]);
+  } finally {
+    fs.rmSync(fixture.tempDir, { recursive: true, force: true });
+  }
+});
+
 test("prelaunch cleanup preserves symlinked and customized launcher artifacts", () => {
   for (const kind of ["symlink", "customized"]) {
     const fixture = createDesktopSyncFixture();
