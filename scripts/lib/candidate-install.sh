@@ -37,7 +37,7 @@ remove_managed_candidate_backup() {
     # `find -P` also avoids dereferencing a path replaced with a symlink.
     find -P "$path" -type d -exec chmod u+w {} + 2>/dev/null || true
     [ -d "$path" ] && [ ! -L "$path" ] || return 0
-    rm -rf -- "$path"
+    rm -rf -- "$path" 2>/dev/null
 }
 
 cleanup_managed_candidate_backups_locked() {

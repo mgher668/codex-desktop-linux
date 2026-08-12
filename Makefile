@@ -129,7 +129,7 @@ package:
 	esac
 
 install:
-	@latest() { compgen -G "$$1" | sort -V | tail -n 1; }; \
+	@latest() { "$(CURDIR)/scripts/select-latest-package.sh" "$$1"; }; \
 	format="$$( $(detect_package_format) )"; \
 	case "$$format" in \
 	  deb) artifact="$${DEB:-$$(latest '$(DEB_GLOB)')}"; [ -n "$$artifact" ]; "$(CURDIR)/scripts/sudo-with-alert.sh" dpkg -i "$$artifact" ;; \
