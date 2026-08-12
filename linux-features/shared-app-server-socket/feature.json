@@ -24,5 +24,10 @@
       "name": "socket-cleanup.sh",
       "mode": "0755"
     }
+  },
+  "packageDependencies": {
+    "deb": ["nodejs"],
+    "rpm": ["nodejs"],
+    "pacman": ["nodejs"]
   }
 }

@@ -11,9 +11,16 @@ const RESERVED_TOP_LEVEL_NAMES = new Set([
   "features.example.json",
   "features.json",
 ]);
-// Keep removed feature ids loadable so preserved update-builder configs still rebuild.
 const LEGACY_FEATURE_ID_ALIASES = new Map([
   ["zed-opener", "open-target-discovery"],
+]);
+// Only explicitly retired ids are ignored. This lets a preserved local config
+// survive a removal without making typos or arbitrary unknown ids fail open.
+const RETIRED_FEATURE_IDS = new Set([
+  "codex-wrapper-updater",
+  "deferred-update-build",
+  "example-feature",
+  "open-target-discovery",
 ]);
 
 const RUNTIME_HOOK_DIRS = {
@@ -152,6 +159,9 @@ function normalizeEnabledFeatureIds(value, sourcePath, options = {}) {
       continue;
     }
     const id = LEGACY_FEATURE_ID_ALIASES.get(item) ?? item;
+    if (RETIRED_FEATURE_IDS.has(id)) {
+      continue;
+    }
     if (seen.has(id)) {
       if (options.strict === true) {
         throw new Error(`Duplicate Linux feature id in ${sourcePath}: ${item}`);
@@ -209,6 +219,9 @@ function normalizeLinuxFeatureSettings(value, sourcePath) {
       continue;
     }
     const id = LEGACY_FEATURE_ID_ALIASES.get(rawId) ?? rawId;
+    if (RETIRED_FEATURE_IDS.has(id)) {
+      continue;
+    }
     if (rawSettings == null || typeof rawSettings !== "object" || Array.isArray(rawSettings)) {
       console.warn(`WARN: Linux feature '${rawId}' settings in ${sourcePath} must be an object`);
       continue;
@@ -1469,9 +1482,11 @@ module.exports = {
   loadEnabledLinuxFeatures,
   loadLinuxFeaturePatchDescriptors,
   linuxFeatureManifestMap,
+  linuxFeaturesConfig,
   linuxFeaturesConfigPath,
   linuxFeaturesRoot,
   resolveFeatureEntrypoint,
+  RETIRED_FEATURE_IDS,
   restoreEnabledLinuxFeaturePackageResourcePermissions,
   stageEnabledLinuxFeatureInstall,
   stageEnabledLinuxFeaturePackageResources,

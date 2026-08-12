@@ -1,4 +1,26 @@
-6: @theirs
+#!/bin/bash
+set -Eeuo pipefail
+
+CODEX_LINUX_APP_ID="${CODEX_LINUX_APP_ID:-__CODEX_LINUX_APP_ID__}"
+CODEX_LINUX_APP_DISPLAY_NAME="${CODEX_LINUX_APP_DISPLAY_NAME:-__CODEX_LINUX_APP_DISPLAY_NAME__}"
+CODEX_LINUX_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CODEX_LINUX_APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
+CODEX_LINUX_APP_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$CODEX_LINUX_APP_ID"
+export CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_APP_DIR
+export CODEX_LINUX_APP_STATE_DIR CODEX_LINUX_APP_CACHE_DIR
+export CHROME_DESKTOP="${CODEX_LINUX_APP_ID}.desktop"
+export BAMF_DESKTOP_FILE_HINT="/usr/share/applications/${CODEX_LINUX_APP_ID}.desktop"
+
+HOOK_ROOT="$CODEX_LINUX_APP_DIR/.codex-linux"
+CHATGPT_BINARY="$CODEX_LINUX_APP_DIR/ChatGPT"
+
+usage() {
+    cat <<EOF
+Usage: $0 [--diagnose] [ChatGPT arguments or URI]
+
+Runs OpenAI's official Linux ChatGPT executable from the custom
+$CODEX_LINUX_APP_ID distribution. Arguments and deep-link URIs are forwarded
+unchanged after enabled feature hooks have run.
 EOF
 }
 

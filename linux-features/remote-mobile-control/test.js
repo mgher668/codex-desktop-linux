@@ -562,7 +562,7 @@ test("remote mobile control feature exposes its stage hook when enabled", () => 
   });
 });
 
-test("remote mobile stage hook reserves one Desktop instance only for Desktop ownership", () => {
+test("remote mobile stage hook relies on the official single-instance lifecycle", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-stage-"));
   try {
     const installDir = path.join(tempRoot, "package", "opt", "codex-desktop");
@@ -571,7 +571,6 @@ test("remote mobile stage hook reserves one Desktop instance only for Desktop ow
     const featureMarker = path.join(installDir, ".codex-linux", "remote-mobile-control-enabled");
     const marker = path.join(installDir, ".codex-linux", "desktop-app-server-remote-control-enabled");
     const coldStartHook = path.join(installDir, ".codex-linux", "cold-start.d", "remote-mobile-control");
-    const singleInstanceMarker = path.join(installDir, ".codex-linux", "single-instance-required");
     const env = {
       ARCH: "x64",
       CODEX_UPSTREAM_APP_DIR: path.join(tempRoot, "upstream-app"),
@@ -593,23 +592,12 @@ test("remote mobile stage hook reserves one Desktop instance only for Desktop ow
     assert.equal(second.status, 0, second.stderr || second.stdout);
     assert.equal(fs.readFileSync(featureMarker, "utf8"), "remote-mobile-control\n");
     assert.equal(fs.readFileSync(marker, "utf8"), "version=1\nowner=desktop\n");
-    assert.equal(
-      fs.readFileSync(singleInstanceMarker, "utf8"),
-      "version=1\nfeature=remote-mobile-control\n",
-    );
+    assert.equal(fs.existsSync(path.join(installDir, ".codex-linux", "single-instance-required")), false);
     assert.equal(fs.statSync(coldStartHook).mode & 0o777, 0o755);
     assert.equal(
       fs.readFileSync(coldStartHook, "utf8"),
       fs.readFileSync(path.join(__dirname, "cold-start-hook.sh"), "utf8"),
     );
-    const policy = runLauncherMultiLaunchPolicy(installDir);
-    assert.equal(policy.status, 0, policy.stderr || policy.stdout);
-    assert.equal(policy.stdout.trim(), "active=0 port=62000 args=");
-    const proxyPolicy = runLauncherMultiLaunchPolicy(installDir, {
-      CODEX_REMOTE_CONTROL_APP_SERVER_MODE: "proxy",
-    });
-    assert.equal(proxyPolicy.status, 0, proxyPolicy.stderr || proxyPolicy.stdout);
-    assert.equal(proxyPolicy.stdout.trim(), "active=1 port=62000 args=");
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -3713,7 +3701,6 @@ test("remote mobile control feature participates in ASAR patching and reports", 
       const source = syntheticMainBundle();
       const patched = patchMainBundleSource(source, null);
       assert.match(patched, /codexLinuxRemoteControlDeviceKeyClient/);
-      assert.match(patched, /n\.kind===`local`&&process\.platform!==`linux`/);
 
       const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-app-"));
       try {
@@ -3818,7 +3805,6 @@ test("remote mobile control feature participates in ASAR patching and reports", 
           "utf8",
         );
         assert.match(patchedFile, /codexLinuxRemoteControlDeviceKeyClient/);
-        assert.match(patchedFile, /n\.kind===`local`&&process\.platform!==`linux`/);
         assert.match(patchedAppServerLaunchFile, /codexLinuxRemoteMobileLocalAppServerArgs/);
         assert.match(patchedAppServerLaunchFile, /`--remote-control`/);
         assert.match(patchedRemoteConnectionVisibilityFile, /codexLinuxRemoteControlLoadGateEnabled/);
@@ -3846,12 +3832,7 @@ test("remote mobile control feature participates in ASAR patching and reports", 
             patch.status === "applied",
           ),
         );
-        assert.ok(
-          report.patches.some((patch) =>
-            patch.name === "linux-remote-control-config-preservation" &&
-            patch.status === "applied",
-          ),
-        );
+        assert.equal(report.patches.some((patch) => patch.sourceKind === "core"), false);
         assert.equal(
           report.patches.some(
             (patch) => patch.name === "feature:remote-mobile-control:linux-remote-control-preserve-config",

@@ -4,6 +4,12 @@ const {
   delegatePatchMarker,
   patchDelegationState,
 } = require("../../scripts/patches/lib/composition-delegation.js");
+const {
+  applyLinuxNativeTitlebarPatch,
+} = require("../../scripts/patches/impl/main-process/window.js");
+const {
+  applyLinuxWindowControlsSafeAreaPatch,
+} = require("../../scripts/patches/impl/webview/index.js");
 
 const FEATURE_ID = "frameless-titlebar";
 const LINUX_NATIVE_TITLEBAR_PATCH_ID = "linux-native-titlebar";
@@ -305,6 +311,18 @@ function applyFramelessTitlebarWebviewPatch(currentSource) {
   return currentSource;
 }
 
+function applyStandaloneFramelessTitlebarMainPatch(currentSource, context) {
+  return applyFramelessTitlebarMainPatch(
+    applyLinuxNativeTitlebarPatch(currentSource, context),
+  );
+}
+
+function applyStandaloneFramelessTitlebarWebviewPatch(currentSource, context) {
+  return applyFramelessTitlebarWebviewPatch(
+    applyLinuxWindowControlsSafeAreaPatch(currentSource, context),
+  );
+}
+
 function hasCompleteFramelessWindowControlsSafeAreaComposition(source) {
   const delegation = patchDelegationState(
     source,
@@ -364,19 +382,17 @@ const patches = [
     phase: "main-bundle",
     order: 20_720,
     ciPolicy: "optional",
-    composesPatches: [LINUX_NATIVE_TITLEBAR_PATCH_ID],
-    apply: applyFramelessTitlebarMainPatch,
+    apply: applyStandaloneFramelessTitlebarMainPatch,
   },
   {
     id: "webview-window-controls-layout",
     phase: "webview-asset",
     order: 20_730,
     ciPolicy: "optional",
-    composesPatches: [LINUX_WINDOW_CONTROLS_SAFE_AREA_PATCH_ID],
     pattern: /^app-initial-[^.]+\.js$/,
     missingDescription: "main app chrome bundle",
     skipDescription: "frameless titlebar webview layout patch",
-    apply: applyFramelessTitlebarWebviewPatch,
+    apply: applyStandaloneFramelessTitlebarWebviewPatch,
   },
 ];
 

@@ -26,7 +26,6 @@ const {
   applyWebviewAssetPatchDescriptors,
   descriptorAppliesTo,
   descriptorEnabled,
-  discoverCorePatchDescriptors,
   normalizePatchDescriptors,
 } = require("./engine.js");
 const {
@@ -34,9 +33,6 @@ const {
   PHASE_EXTRACTED_APP_PRE_WEBVIEW,
   PHASE_MAIN_BUNDLE,
 } = require("./descriptor.js");
-const {
-  isComputerUseUiEnabled,
-} = require("./impl/computer-use.js");
 
 const REQUIRED_UPSTREAM = "required-upstream";
 const OPTIONAL = "optional";
@@ -56,15 +52,12 @@ function recordMainProcessUiPatch(report, status, reason = null) {
 }
 
 function normalizeDiscoveredCorePatchDescriptors(options = {}) {
-  const root = options.corePatchRoot ?? CORE_PATCH_ROOT;
-  return normalizePatchDescriptors(discoverCorePatchDescriptors({ root }));
+  void options;
+  return [];
 }
 
 function corePatchDescriptors(options = {}) {
-  if (process.env.CODEX_INCLUDE_LEGACY_CORE_PATCHES === "1") {
-    return normalizeDiscoveredCorePatchDescriptors(options);
-  }
-  return [];
+  return normalizeDiscoveredCorePatchDescriptors(options);
 }
 
 function featurePatchDescriptors(options = {}) {
@@ -84,7 +77,7 @@ function createMainBundleContext(iconAsset, options = {}) {
   const enabledFeatureIds = options.enabledFeatureIds ??
     enabledLinuxFeatureIds(currentFeaturePatchOptions);
   return {
-    enableComputerUseUi: isComputerUseUiEnabled(),
+    enableComputerUseUi: enabledFeatureIds.includes("computer-use-linux"),
     enabledFeatureIds: [...enabledFeatureIds],
     iconAsset,
     iconPathExpression:
@@ -320,7 +313,7 @@ function requiredPatchNamesForProfile(profile, options = {}) {
     return [];
   }
   const linux = options.linuxTarget ?? detectLinuxTargetContext(options.linuxTargetOptions);
-  const context = { linux, linuxTarget: linux, enableComputerUseUi: isComputerUseUiEnabled() };
+  const context = { linux, linuxTarget: linux, enableComputerUseUi: false };
   return allPatchPolicies({ corePatchRoot: options.corePatchRoot })
     .filter((patch) => patch.ciPolicy === REQUIRED_UPSTREAM)
     .filter((patch) => patch.appliesTo == null || patch.appliesTo(context) !== false)

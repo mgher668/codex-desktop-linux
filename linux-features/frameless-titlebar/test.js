@@ -96,15 +96,14 @@ function nativeTitlebarCompositionFixture() {
 test("frameless-titlebar stays disabled until listed in features.json", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "frameless-titlebar-feature-"));
   try {
-    const featuresRoot = path.join(tempDir, "linux-features");
-    fs.mkdirSync(featuresRoot, { recursive: true });
-    copyFeatureTo(featuresRoot);
-    fs.writeFileSync(path.join(featuresRoot, "features.example.json"), '{"enabled":[]}\n');
+    const featuresRoot = path.join(__dirname, "..");
+    const configPath = path.join(tempDir, "features.json");
+    fs.writeFileSync(configPath, '{"enabled":[]}\n');
 
-    assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot }), []);
+    assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot, featuresConfigPath: configPath }), []);
 
-    fs.writeFileSync(path.join(featuresRoot, "features.json"), '{"enabled":["frameless-titlebar"]}\n');
-    const descriptors = loadLinuxFeaturePatchDescriptors({ featuresRoot });
+    fs.writeFileSync(configPath, '{"enabled":["frameless-titlebar"]}\n');
+    const descriptors = loadLinuxFeaturePatchDescriptors({ featuresRoot, featuresConfigPath: configPath });
     assert.deepEqual(
       descriptors.map((descriptor) => descriptor.id).sort(),
       [
