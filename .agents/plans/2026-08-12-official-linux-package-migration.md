@@ -26,8 +26,8 @@ may be backfilled by the next milestone commit).
 | 0 | Branch and exhaustive tracking record | complete | clean `main` at `4da3436f`; 86-ID official-ASAR probe and 34 manifests inventoried | `ea59dbc9` |
 | 1 | Signed Linux-package source and extraction pipeline | complete | source-security tests; local official-package build; ASAR SHA equality | `33e2c03d` |
 | 2 | Compact launcher and cross-format package payload | complete | launcher tests; amd64 deb/RPM builds; pacman/AppImage stage inspection | `2653173b` |
-| 3 | Core patch retirement and feature retargeting | complete | 784 Node tests: 783 pass, 1 skipped; empty core registry; retired/unknown-ID policy | pending commit |
-| 4 | Signed-package updater and state migration | pending | updater release/download/promotion/rollback suite | — |
+| 3 | Core patch retirement and feature retargeting | complete | 784 Node tests: 783 pass, 1 skipped; empty core registry; retired/unknown-ID policy | `e26e494d` |
+| 4 | Signed-package updater and state migration | complete | 48 Rust tests; Clippy; signed metadata-only probe; updater-enabled deb payload | pending commit |
 | 5 | Nix and signed-package CI/watchdog | pending | Nix evaluation; both architecture workflows | — |
 | 6 | Documentation and final repository cleanup | pending | `ci-local.sh all`; forbidden-reference scan; diff audit | — |
 
@@ -63,13 +63,13 @@ may be backfilled by the next milestone commit).
 
 ### Updater
 
-- [ ] Poll signed APT metadata instead of a DMG HEAD request.
-- [ ] Cache by version/architecture/SHA256.
-- [ ] Rebuild by extraction plus enabled feature application only.
-- [ ] Keep Node/ASAR tooling in update-builder, not the app runtime.
-- [ ] Preserve candidate promotion, running-app guard, rollback, and cleanup.
-- [ ] Reset incompatible pending DMG state without losing installed/rollback data.
-- [ ] Remove DMG parser/cache compatibility after migration.
+- [x] Poll signed APT metadata instead of an untrusted moving-object HEAD request.
+- [x] Cache by version/architecture/SHA256.
+- [x] Rebuild by extraction plus enabled feature application only.
+- [x] Keep Node/ASAR tooling in update-builder, not the app runtime.
+- [x] Preserve candidate promotion, running-app guard, rollback, and cleanup.
+- [x] Reset incompatible schema-v1 pending state without losing installed/rollback data.
+- [x] Remove the legacy source parser/cache model after the one-time schema reset.
 
 ### Nix, CI, and watchdog
 
@@ -245,3 +245,5 @@ or new feature must also keep its adjacent README and feature-local tests.
 | 2026-08-12 | Launcher | `node --test launcher/start.test.js` | 2/2 pass: hook composition, exact argument forwarding, diagnose | pending commit |
 | 2026-08-12 | Package payload | updater-disabled amd64 builders | deb and RPM built/inspected; AppImage and pacman staged/inspected; official `codex` retained, duplicate CLI absent, AppArmor path correct | pending commit |
 | 2026-08-12 | Core/feature audit | `node --test scripts/patch-linux-window-ui.test.js scripts/lib/linux-features.test.js linux-features/*/test.js` | 784 tests: 783 pass, 1 skipped; zero core descriptors; four retired IDs ignored and typos rejected | pending commit |
+| 2026-08-12 | Updater | `cargo test -p codex-update-manager`; `cargo clippy -p codex-update-manager -- -D warnings` | 48/48 tests and warning-free Clippy; schema-v1 candidate reset preserves rollback | pending commit |
+| 2026-08-12 | Updater source/payload | metadata-only signed index probe; updater-enabled `.deb` build/inspection | official 26.803.81509 amd64 metadata resolved without package download; update-builder contains verifier/key/templates and no Cargo workspace, managed runtime, or legacy source tooling | pending commit |

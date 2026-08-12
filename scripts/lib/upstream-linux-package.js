@@ -159,9 +159,12 @@ async function resolveOfficialPackage(options) {
   verifyIndexedFile(packagesPath, indexedPackages, packagesRelative);
   const metadata = selectChatgptPackage(fs.readFileSync(packagesPath, "utf8"), architecture);
 
-  const packagePath = path.join(outputDir, `chatgpt_${metadata.version}_${architecture}.deb`);
-  await download(`${repository}/${metadata.repositoryPath}`, packagePath);
-  verifyIndexedFile(packagePath, metadata, path.basename(packagePath));
+  let packagePath = null;
+  if (!options.metadataOnly) {
+    packagePath = path.join(outputDir, `chatgpt_${metadata.version}_${architecture}.deb`);
+    await download(`${repository}/${metadata.repositoryPath}`, packagePath);
+    verifyIndexedFile(packagePath, metadata, path.basename(packagePath));
+  }
   const result = { ...metadata, repository, path: packagePath };
   fs.writeFileSync(options.metadataPath, `${JSON.stringify(result, null, 2)}\n`);
   return result;
@@ -170,9 +173,21 @@ async function resolveOfficialPackage(options) {
 async function main() {
   const args = process.argv.slice(2);
   const values = {};
-  for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1];
+  let metadataOnly = false;
+  for (let i = 0; i < args.length;) {
+    if (args[i] === "--metadata-only") {
+      metadataOnly = true;
+      i += 1;
+      continue;
+    }
+    if (!args[i].startsWith("--") || i + 1 >= args.length) {
+      throw new Error(`Invalid argument: ${args[i]}`);
+    }
+    values[args[i]] = args[i + 1];
+    i += 2;
+  }
   if (!values["--output-dir"] || !values["--metadata"] || !values["--key-base64"]) {
-    throw new Error("Usage: upstream-linux-package.js --output-dir DIR --metadata FILE --key-base64 FILE [--arch ARCH] [--repository URL]");
+    throw new Error("Usage: upstream-linux-package.js --output-dir DIR --metadata FILE --key-base64 FILE [--arch ARCH] [--repository URL] [--metadata-only]");
   }
   const result = await resolveOfficialPackage({
     outputDir: values["--output-dir"],
@@ -180,8 +195,9 @@ async function main() {
     keyBase64Path: values["--key-base64"],
     architecture: values["--arch"] ?? os.arch(),
     repository: values["--repository"],
+    metadataOnly,
   });
-  process.stdout.write(`${result.path}\n`);
+  process.stdout.write(`${result.path ?? values["--metadata"]}\n`);
 }
 
 if (require.main === module) {
