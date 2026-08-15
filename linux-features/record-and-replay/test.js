@@ -141,11 +141,11 @@ test("record-and-replay enables with chronicle-skysight dependency", () => {
   });
 });
 
-test("record-and-replay rejects direct config without chronicle-skysight", () => {
+test("record-and-replay migrates direct config by enabling chronicle-skysight", () => {
   withTempFeatureRoot(["record-and-replay"], (root) => {
-    assert.throws(
-      () => loadEnabledLinuxFeatures({ featuresRoot: root }),
-      /requires 'chronicle-skysight' to be enabled/,
+    assert.deepEqual(
+      loadEnabledLinuxFeatures({ featuresRoot: root }).map((feature) => feature.id),
+      ["chronicle-skysight", "record-and-replay"],
     );
   });
 });
