@@ -10,6 +10,13 @@ const {
   loadLinuxFeaturePatchDescriptors,
 } = require("../../scripts/lib/linux-features.js");
 const {
+  createPatchReport,
+  enabledFeatureFailuresFromReport,
+  optionalDriftFromReport,
+  reportHasPatchChanges,
+} = require("../../scripts/lib/patch-report.js");
+const { patchExtractedApp } = require("../../scripts/patches/runner.js");
+const {
   PATCH_MARKER,
   applyBundledMarketplaceStagingCopyPermissions,
 } = require("./patch.js");
@@ -83,15 +90,53 @@ test("feature loads only when enabled with its prefixed optional descriptor", ()
   assert.equal(descriptor.sourceKind, "feature");
   assert.equal(descriptor.featureId, FEATURE_ID);
   assert.equal(descriptor.ciPolicy, "optional");
+  assert.equal(descriptor.enforceWhenEnabled, false);
+  assert.equal(descriptor.order, 20_170);
 });
 
-test("required descriptor anchor is unique and patching is idempotent", () => {
+test("descriptor anchor is unique and patching is idempotent", () => {
   const patched = applyBundledMarketplaceStagingCopyPermissions(FIXTURE);
   assert.match(patched, new RegExp(PATCH_MARKER));
   assert.match(patched, /try\{await y\.default\.cp/);
   assert.equal(applyBundledMarketplaceStagingCopyPermissions(patched), patched);
   assert.throws(() => applyBundledMarketplaceStagingCopyPermissions(FIXTURE.replaceAll("ditto", "other")), /matched 0 times/);
   assert.throws(() => applyBundledMarketplaceStagingCopyPermissions(`${FIXTURE}${FIXTURE.replaceAll("Mne", "Nne")}`), /matched 2 times/);
+});
+
+test("Computer Use composition has one Nix staging permission owner", () => {
+  const descriptors = descriptorsFor(["computer-use-linux", FEATURE_ID]);
+  const stagingDescriptors = descriptors.filter(({ id }) =>
+    id.includes("staging") && id.includes("permission"));
+  assert.deepEqual(stagingDescriptors.map(({ id }) => id), [DESCRIPTOR_ID]);
+  assert.match(stagingDescriptors[0].apply(FIXTURE), new RegExp(PATCH_MARKER));
+});
+
+test("upstream drift is reported but does not fail enabled-feature acceptance", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nix-marketplace-drift-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const buildDir = path.join(root, ".vite", "build");
+  fs.mkdirSync(buildDir, { recursive: true });
+  const mainPath = path.join(buildDir, "main-fixture.js");
+  const drifted = FIXTURE.replaceAll("ditto", "other");
+  fs.writeFileSync(mainPath, drifted);
+  const configPath = path.join(root, "features.json");
+  fs.writeFileSync(configPath, JSON.stringify({ enabled: [FEATURE_ID] }));
+
+  const report = createPatchReport();
+  patchExtractedApp(root, {
+    report,
+    featuresConfigPath: configPath,
+    featuresRoot: path.resolve(__dirname, ".."),
+  });
+
+  const [entry] = report.patches;
+  assert.equal(entry.name, DESCRIPTOR_ID);
+  assert.equal(entry.status, "skipped-optional");
+  assert.equal(entry.enforceWhenEnabled, false);
+  assert.deepEqual(enabledFeatureFailuresFromReport(report), []);
+  assert.equal(optionalDriftFromReport(report).length, 1);
+  assert.equal(reportHasPatchChanges(report), false);
+  assert.equal(fs.readFileSync(mainPath, "utf8"), drifted);
 });
 
 test("finally repairs copied real files and directories, including after copy failure", async () => {

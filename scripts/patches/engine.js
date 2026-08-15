@@ -64,9 +64,20 @@ function normalizeDescriptor(descriptor, sourcePath = null, index = 0) {
       `Patch descriptor '${id}' has unsupported ciPolicy '${ciPolicy}' in ${sourcePath ?? "inline descriptor"}`,
     );
   }
+  if (descriptor.enforceWhenEnabled != null && typeof descriptor.enforceWhenEnabled !== "boolean") {
+    throw new Error(
+      `Patch descriptor '${id}' enforceWhenEnabled must be a boolean in ${sourcePath ?? "inline descriptor"}`,
+    );
+  }
+  if (descriptor.enforceWhenEnabled === false && ciPolicy !== OPTIONAL) {
+    throw new Error(
+      `Patch descriptor '${id}' can disable enabled-feature enforcement only with ciPolicy 'optional'`,
+    );
+  }
   const normalized = {
     ...descriptor,
     ciPolicy,
+    enforceWhenEnabled: descriptor.enforceWhenEnabled ?? true,
     id,
     name: descriptor.name ?? id,
     phase: descriptor.phase ?? PHASE_MAIN_BUNDLE,
@@ -221,6 +232,9 @@ function recordDescriptorPatch(report, descriptor, status, reason, context, extr
     ciPolicy: descriptor.ciPolicy ?? "optional",
     sourceKind: descriptor.sourceKind ?? "core",
     ...(descriptor.featureId != null ? { featureId: descriptor.featureId } : {}),
+    ...(descriptor.sourceKind === "feature"
+      ? { enforceWhenEnabled: descriptor.enforceWhenEnabled !== false }
+      : {}),
     ...(extraMetadata ?? {}),
     ...warnings,
   });

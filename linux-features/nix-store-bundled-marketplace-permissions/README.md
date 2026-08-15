@@ -18,6 +18,11 @@ harmless, and lets chmod errors propagate. It neither changes source-store
 permissions nor scans/removes old staging directories or runtime marketplace
 data. Existing leaked staging data must be cleaned up manually.
 
+Upstream-contract drift is best-effort for package consumers: the patch report
+records `skipped-optional`, the build warns, and an otherwise unchanged ASAR is
+preserved byte-for-byte. Repository CI still requires the descriptor to apply
+to the current signed official package so drift is repaired before release.
+
 Run the adjacent regression test with:
 
 ```bash

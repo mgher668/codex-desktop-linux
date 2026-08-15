@@ -11,6 +11,7 @@ const {
   mainBundlePatch,
   webviewAssetPatch,
 } = require("./descriptor.js");
+const { normalizePatchDescriptors } = require("./engine.js");
 
 test("descriptor factories stamp explicit patch phases", () => {
   assert.equal(
@@ -57,6 +58,22 @@ test("descriptor factories validate the fresh descriptor contract", () => {
     }).ciPolicy,
     CI_POLICY_OPTIONAL,
   );
+  assert.equal(
+    mainBundlePatch({
+      id: "default-enforcement",
+      apply: (source) => source,
+    }).enforceWhenEnabled,
+    true,
+  );
+  assert.equal(
+    mainBundlePatch({
+      id: "best-effort",
+      ciPolicy: "optional",
+      enforceWhenEnabled: false,
+      apply: (source) => source,
+    }).enforceWhenEnabled,
+    false,
+  );
 
   assert.throws(
     () => webviewAssetPatch({ id: "missing-pattern", apply: (source) => source }),
@@ -82,5 +99,27 @@ test("descriptor factories validate the fresh descriptor contract", () => {
   assert.throws(
     () => mainBundlePatch({ id: "bad-composition", composesPatches: "linux-owner", apply: (source) => source }),
     /removed composesPatches support/,
+  );
+  assert.throws(
+    () => mainBundlePatch({ id: "bad-enforcement", enforceWhenEnabled: "no", apply: (source) => source }),
+    /enforceWhenEnabled must be a boolean/,
+  );
+  assert.throws(
+    () => mainBundlePatch({
+      id: "required-bypass",
+      ciPolicy: "required-upstream",
+      enforceWhenEnabled: false,
+      apply: (source) => source,
+    }),
+    /only with ciPolicy 'optional'/,
+  );
+  assert.throws(
+    () => normalizePatchDescriptors([{
+      id: "raw-required-bypass",
+      ciPolicy: "required-upstream",
+      enforceWhenEnabled: false,
+      apply: (source) => source,
+    }]),
+    /only with ciPolicy 'optional'/,
   );
 });

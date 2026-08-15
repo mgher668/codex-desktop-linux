@@ -73,6 +73,8 @@ module.exports = {
   descriptors: [mainBundlePatch({
     id: "bundled-marketplace-staging-copy-permissions",
     ciPolicy: "optional",
+    enforceWhenEnabled: false,
+    order: 20_170,
     apply: applyBundledMarketplaceStagingCopyPermissions,
   })],
 };
