@@ -7,6 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const {
+  featuresJsonSummary,
   loadLinuxFeaturePatchDescriptors,
 } = require("../../scripts/lib/linux-features.js");
 const {
@@ -77,6 +78,7 @@ function descriptorsFor(enabled) {
     return loadLinuxFeaturePatchDescriptors({
       featuresRoot: path.resolve(__dirname, ".."),
       featuresConfigPath: configPath,
+      internalFeatureIds: enabled.includes(FEATURE_ID) ? [FEATURE_ID] : [],
     });
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -92,6 +94,20 @@ test("feature loads only when enabled with its prefixed optional descriptor", ()
   assert.equal(descriptor.ciPolicy, "optional");
   assert.equal(descriptor.enforceWhenEnabled, false);
   assert.equal(descriptor.order, 20_170);
+});
+
+test("feature stays hidden from public configuration", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nix-marketplace-public-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const configPath = path.join(root, "features.json");
+  fs.writeFileSync(configPath, JSON.stringify({ enabled: [FEATURE_ID] }));
+  const featuresRoot = path.resolve(__dirname, "..");
+
+  assert.throws(
+    () => loadLinuxFeaturePatchDescriptors({ featuresRoot, featuresConfigPath: configPath }),
+    /is internal and cannot be enabled through public feature configuration/,
+  );
+  assert.equal(featuresJsonSummary({ featuresRoot }).some(({ id }) => id === FEATURE_ID), false);
 });
 
 test("descriptor anchor is unique and patching is idempotent", () => {
@@ -127,6 +143,7 @@ test("upstream drift is reported but does not fail enabled-feature acceptance", 
     report,
     featuresConfigPath: configPath,
     featuresRoot: path.resolve(__dirname, ".."),
+    internalFeatureIds: [FEATURE_ID],
   });
 
   const [entry] = report.patches;
@@ -137,6 +154,28 @@ test("upstream drift is reported but does not fail enabled-feature acceptance", 
   assert.equal(optionalDriftFromReport(report).length, 1);
   assert.equal(reportHasPatchChanges(report), false);
   assert.equal(fs.readFileSync(mainPath, "utf8"), drifted);
+});
+
+test("missing main bundle is reported as best-effort drift", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nix-marketplace-missing-main-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const configPath = path.join(root, "features.json");
+  fs.writeFileSync(configPath, JSON.stringify({ enabled: [FEATURE_ID] }));
+  const report = createPatchReport();
+
+  patchExtractedApp(root, {
+    report,
+    featuresConfigPath: configPath,
+    featuresRoot: path.resolve(__dirname, ".."),
+    internalFeatureIds: [FEATURE_ID],
+  });
+
+  assert.equal(report.patches[0].name, DESCRIPTOR_ID);
+  assert.equal(report.patches[0].status, "skipped-optional");
+  assert.equal(report.patches[0].unavailable, true);
+  assert.deepEqual(enabledFeatureFailuresFromReport(report), []);
+  assert.equal(optionalDriftFromReport(report).length, 1);
+  assert.equal(reportHasPatchChanges(report), false);
 });
 
 test("finally repairs copied real files and directories, including after copy failure", async () => {

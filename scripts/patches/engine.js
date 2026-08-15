@@ -257,6 +257,27 @@ function recordDescriptorError(report, descriptor, error, context, strategies = 
   );
 }
 
+function recordUnavailablePhasePatchDescriptors(descriptors, phase, context, report, reason) {
+  for (const descriptor of descriptors.filter((patch) => patch.phase === phase)) {
+    if (!descriptorAppliesTo(descriptor, context)) {
+      recordDescriptorPatch(report, descriptor, PATCH_STATUS_SKIPPED_TARGET, null, context);
+      continue;
+    }
+    if (!descriptorEnabled(descriptor, context)) {
+      recordDescriptorPatch(report, descriptor, PATCH_STATUS_SKIPPED_DISABLED, null, context);
+      continue;
+    }
+    recordDescriptorPatch(
+      report,
+      descriptor,
+      descriptorFailureStatus(descriptor),
+      reason,
+      context,
+      { unavailable: true },
+    );
+  }
+}
+
 function rethrowPatchIntegrityError(error) {
   if (isPatchIntegrityError(error)) {
     throw error;
@@ -470,5 +491,6 @@ module.exports = {
   normalizeDescriptor,
   normalizePatchDescriptors,
   patchTargetSummary,
+  recordUnavailablePhasePatchDescriptors,
   sortPatchDescriptors,
 };

@@ -287,7 +287,7 @@
               linuxFeatureIds ++ lib.optional enableComputerUseUi "computer-use-linux"
             );
             internalNixFeatureIds = [ "nix-store-bundled-marketplace-permissions" ];
-            effectiveFeatureIds = nixLinuxFeatures.normalize (
+            effectiveFeatureIds = nixLinuxFeatures.normalizeAll (
               userFeatureIds ++ internalNixFeatureIds
             );
             recordReplayBackendEnabled =
@@ -336,6 +336,7 @@
               export CODEX_INSTALL_TRANSACTION_ACTIVE=1
               export CODEX_INSTALL_DIR="$out/opt/codex-desktop"
               export CODEX_LINUX_FEATURES_CONFIG="${featuresConfig}"
+              export CODEX_INTERNAL_LINUX_FEATURE_IDS="${lib.concatStringsSep "," internalNixFeatureIds}"
               ${lib.optionalString (flakeSourceCommit != "") ''
               export CODEX_LINUX_SOURCE_COMMIT="${flakeSourceCommit}"
               export CODEX_LINUX_SOURCE_REMOTE="${flakeSourceRemote}"

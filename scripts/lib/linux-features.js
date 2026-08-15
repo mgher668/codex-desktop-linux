@@ -316,6 +316,9 @@ function normalizeLinuxFeatureManifest(featuresRoot, candidate) {
   if (manifest.defaultEnabled === true) {
     throw new Error(`Linux feature '${id}' must be disabled by default; defaultEnabled true is not allowed`);
   }
+  if (manifest.internal != null && typeof manifest.internal !== "boolean") {
+    throw new Error(`Linux feature '${id}' internal must be a boolean`);
+  }
 
   const relativeDir = path.relative(featuresRoot, candidate.dir);
   return {
@@ -329,10 +332,23 @@ function normalizeLinuxFeatureManifest(featuresRoot, candidate) {
     manifest: {
       ...manifest,
       defaultEnabled: false,
+      internal: manifest.internal === true,
       requires: normalizeFeatureIdList(manifest.requires, "requires", id),
       conflicts: normalizeFeatureIdList(manifest.conflicts, "conflicts", id),
     },
   };
+}
+
+function allowedInternalFeatureIds(options = {}) {
+  const configured = options.internalFeatureIds ??
+    String(process.env.CODEX_INTERNAL_LINUX_FEATURE_IDS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+  if (!Array.isArray(configured)) {
+    throw new Error("internalFeatureIds must be an array");
+  }
+  return new Set(configured.map((id) => assertFeatureId(id, "Internal Linux feature id")));
 }
 
 function discoverLinuxFeatureManifests(options = {}) {
@@ -422,10 +438,15 @@ function loadEnabledLinuxFeatures(options = {}) {
     : expandEnabledFeatureDependencies(options.enabledFeatureIds, available);
   const features = [];
   const missing = [];
+  const allowedInternal = allowedInternalFeatureIds(options);
   for (const id of enabled) {
     const feature = available.get(id);
     if (feature == null) {
       missing.push(id);
+    } else if (feature.manifest.internal && !allowedInternal.has(id)) {
+      throw new Error(
+        `Linux feature '${id}' is internal and cannot be enabled through public feature configuration`,
+      );
     } else {
       features.push({ ...feature, settings: config.settings[id] ?? {} });
     }
@@ -506,7 +527,7 @@ function resolveFeatureRelativePath(feature, relativePath, label, { mustExist = 
   return resolved;
 }
 
-function resolveFeatureEntrypoint(feature, key) {
+function resolveFeatureEntrypoint(feature, key, options = {}) {
   const relativePath = feature.manifest.entrypoints?.[key];
   if (relativePath == null) {
     return null;
@@ -514,13 +535,16 @@ function resolveFeatureEntrypoint(feature, key) {
   try {
     return resolveFeatureRelativePath(feature, relativePath, `${key} entrypoint`);
   } catch (error) {
+    if (options.strict === true) {
+      throw error;
+    }
     console.warn(`WARN: ${error.message}`);
     return null;
   }
 }
 
-function loadFeatureEntrypointModule(feature, key) {
-  const entrypoint = resolveFeatureEntrypoint(feature, key);
+function loadFeatureEntrypointModule(feature, key, options = {}) {
+  const entrypoint = resolveFeatureEntrypoint(feature, key, options);
   if (entrypoint == null) {
     return null;
   }
@@ -531,6 +555,11 @@ function loadFeatureEntrypointModule(feature, key) {
       moduleExports: require(entrypoint),
     };
   } catch (error) {
+    if (options.strict === true) {
+      throw new Error(`Could not load Linux feature '${feature.id}' ${key}: ${error.message}`, {
+        cause: error,
+      });
+    }
     console.warn(`WARN: Could not load Linux feature '${feature.id}' ${key}: ${error.message}`);
     return null;
   }
@@ -615,7 +644,7 @@ function featurePatchDescriptorListFromExports(feature, moduleExports, sourcePat
 function loadLinuxFeaturePatchDescriptors(options = {}) {
   const descriptors = [];
   for (const [featureIndex, feature] of loadEnabledLinuxFeatures(options).entries()) {
-    const loaded = loadFeatureEntrypointModule(feature, "patchDescriptors");
+    const loaded = loadFeatureEntrypointModule(feature, "patchDescriptors", { strict: true });
     if (loaded == null) {
       continue;
     }
@@ -1348,7 +1377,9 @@ function restoreEnabledLinuxFeaturePackageResourcePermissions(packageRoot, optio
 }
 
 function featuresJsonSummary(options = {}) {
-  return discoverLinuxFeatureManifests(options).map((feature) => ({
+  return discoverLinuxFeatureManifests(options)
+    .filter((feature) => !feature.manifest.internal)
+    .map((feature) => ({
     id: feature.id,
     title: feature.manifest.title ?? feature.manifest.name ?? feature.id,
     name: feature.manifest.name ?? feature.manifest.title ?? feature.id,
@@ -1361,7 +1392,7 @@ function featuresJsonSummary(options = {}) {
     defaultEnabled: false,
     setup: feature.manifest.setup ?? null,
     cleanup: feature.manifest.cleanup ?? null,
-  }));
+    }));
 }
 
 function main() {
