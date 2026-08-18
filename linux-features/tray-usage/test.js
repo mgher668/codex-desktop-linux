@@ -15,10 +15,10 @@ const {
 
 function officialMainFixture(alias = "i", menuAlias = "f") {
   return [
-    "function qTe(){let{pinnedThreads:e,recentThreads:t,runningThreads:n,unreadThreads:r,usageLimits:",
-    `${alias}}=this.trayMenuThreads;`,
+    "getNativeTrayMenuItems(){let{pinnedThreads:e,recentThreads:t,runningThreads:n,unreadThreads:r,usageLimits:",
+    `${alias}}=this.trayMenuThreads,a=[];`,
     `let ${menuAlias}=process.platform!==\`darwin\`||${alias}.length===0?[]:[{label:\`Usage\`,enabled:!1},...${alias}.map(({label:e})=>({label:e,enabled:!1}))];`,
-    `return ${menuAlias}}`,
+    `return[${menuAlias}]}`,
   ].join("");
 }
 
@@ -87,11 +87,15 @@ test("main-process patch preserves minified aliases", () => {
 test("drifted, duplicate, and mixed contracts remain byte-identical", () => {
   const current = officialMainFixture();
   const patched = applyTrayUsageMainPatch(current);
+  const drifted = current.replace("process.platform!==`darwin`", "process.platform===`darwin`");
+  const unrelatedLookalike =
+    "function unrelated(){let x=process.platform!==`darwin`||i.length===0?[]:[...i.map(({label:e})=>({label:e,enabled:!1}))];return[x]}";
   const sources = [
-    current.replace("process.platform!==`darwin`", "process.platform===`darwin`"),
+    drifted,
     current + current,
     patched + patched,
     current + patched,
+    drifted + unrelatedLookalike,
   ];
 
   for (const source of sources) {
