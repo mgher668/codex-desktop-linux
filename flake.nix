@@ -501,7 +501,7 @@
               ${lib.optionalString (lib.elem "read-aloud-mcp" effectiveFeatureIds) ''
               export CODEX_LINUX_READ_ALOUD_MCP_SOURCE="${workspaceHelpers}/bin/codex-read-aloud-linux"
               ''}
-14: @ours
+              ${lib.optionalString recordReplayBackendEnabled ''
               export CODEX_RECORD_REPLAY_LINUX_SOURCE="${workspaceHelpers}/bin/codex-record-replay-linux"
               ''}
               ${lib.optionalString (lib.elem "global-dictation" effectiveFeatureIds) ''
