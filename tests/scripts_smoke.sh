@@ -10,6 +10,8 @@ assert_executable() { [ -x "$1" ] || fail "not executable: $1"; }
 assert_contains() { rg -q -- "$2" "$1" || fail "$1 does not contain $2"; }
 assert_absent() { ! rg -q -- "$2" "$1" || fail "$1 unexpectedly contains $2"; }
 
+bash tests/install_tmpdir.sh
+
 assert_executable install.sh
 assert_executable scripts/rebuild-candidate.sh
 assert_executable scripts/select-latest-package.sh
@@ -206,7 +208,7 @@ for (const architecture of ["amd64", "arm64"]) {
 }
 NODE
 
-node --test launcher/start.test.js tests/deb-prerm.test.js scripts/lib/upstream-linux-package.test.js \
+node --test launcher/start.test.js tests/deb-prerm.test.js scripts/lib/upstream-linux-*.test.js \
   scripts/lib/install-verification.test.js \
   scripts/automation/upstream-linux-package-watchdog/test.js \
   scripts/patch-linux-window-ui.test.js scripts/patches/runner.test.js \

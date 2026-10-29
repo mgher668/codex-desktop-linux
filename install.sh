@@ -13,6 +13,22 @@ if [ "$CODEX_APP_ID" != "codex-desktop" ]; then
     DEFAULT_INSTALL_DIR_NAME="$CODEX_APP_ID-app"
 fi
 INSTALL_DIR="${CODEX_INSTALL_DIR:-$INSTALL_ROOT/$DEFAULT_INSTALL_DIR_NAME}"
+# Large extracted payloads must not default to RAM-backed /tmp. GnuPG treats
+# colons in keyring paths as resource URLs, so reject such inherited paths.
+case "${TMPDIR:-}" in
+    /*) case "$TMPDIR" in *:*) unset TMPDIR ;; esac ;;
+    *) unset TMPDIR ;;
+esac
+if [ -z "${TMPDIR:-}" ]; then
+    cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"
+    case "$cache_root" in
+        /*) case "$cache_root" in *:*) cache_root="$HOME/.cache" ;; esac ;;
+        *) cache_root="$HOME/.cache" ;;
+    esac
+    TMPDIR="$cache_root/codex-desktop-dev/tmp"
+fi
+mkdir -p -- "$TMPDIR"
+export TMPDIR
 WORK_DIR="$(mktemp -d)"
 ARCH="${CODEX_TARGET_ARCH:-$(uname -m)}"
 ICON_SOURCE="$SCRIPT_DIR/assets/codex-linux.png"

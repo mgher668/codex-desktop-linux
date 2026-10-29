@@ -72,6 +72,8 @@ Gentoo 本地 ebuild 安装路径已在 OpenRC 环境测试，尚未测试 Gento
 make bootstrap-native
 ```
 
+`install.sh` 自动使用 `${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop-dev/tmp` 临时解包，并在退出时清理工作目录。合法的绝对路径 `TMPDIR` 可覆盖默认值；相对路径或包含冒号的路径会回退到缓存目录。运行 `make` 或直接运行打包脚本前，仍需创建该目录，并在调用它们的 shell 中执行 `export TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop-dev/tmp"`，确保打包阶段也使用磁盘上的临时目录。
+
 它会安装构建依赖，通过 OpenAI 已签名的 stable APT metadata 解析当前
 软件包，构建 `codex-app/`，创建适用于当前发行版的原生包，并安装 `dist/`
 中的最新产物。
@@ -107,6 +109,23 @@ make install-native
 
 `make setup-native` 只保存本地扩展选择，不会构建或安装应用。向导、
 非交互配置、更新器选择和清理方式见[原生安装](docs/native-setup.md)。
+
+### 下载进度与重复安装
+
+`Resolving official chatgpt/...` 阶段包含获取签名元数据和下载完整官方
+`.deb`。安装器会显示各阶段，并每 10 秒报告下载进度。下载使用 curl，遵循
+`HTTPS_PROXY`、`ALL_PROXY` 和 `NO_PROXY`。连接超时为 15 秒，传输停滞超时
+为 30 秒；每份元数据最多下载 60 秒，软件包最多下载 30 分钟。
+
+验证通过的软件包缓存在
+`${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop/upstream`，可用
+`CODEX_UPSTREAM_CACHE_DIR` 指定其他目录。每次构建仍会重新获取并验证签名
+`InRelease` 和 `Packages` 元数据，再核对缓存包的大小与 SHA-256 后复用。
+上游包发生变化或缓存损坏时会重新下载。
+
+跳过已安装的依赖不会跳过应用构建和原生包打包。`make install-native` 仅省去
+依赖准备步骤。若只需重新安装 `dist/` 中最新的已有产物，可运行 `make install`；
+此命令不会纳入生成该产物之后的源码修改。
 
 ### 使用已下载的官方软件包
 

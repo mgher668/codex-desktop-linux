@@ -19,7 +19,16 @@ function mapMachineArch(machine = os.arch()) {
 
 function sha256File(filePath) {
   const hash = crypto.createHash("sha256");
-  hash.update(fs.readFileSync(filePath));
+  const descriptor = fs.openSync(filePath, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    while ((bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
   return hash.digest("hex");
 }
 
@@ -118,11 +127,92 @@ function verifyPackageControl(filePath, expected) {
   }
 }
 
-async function download(url, destination) {
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok) throw new Error(`Download failed (${response.status}) for ${url}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync(destination, bytes, { mode: 0o600 });
+function report(message) {
+  process.stderr.write(`[upstream] ${message}\n`);
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+async function download(url, destination, options = {}) {
+  const label = options.label ?? path.basename(destination);
+  const partialPath = `${destination}.${crypto.randomUUID()}.part`;
+  const started = Date.now();
+  const total = options.expected ? ` / ${formatBytes(options.expected.size)}` : "";
+  // A unique partial file keeps interrupted or concurrent downloads from
+  // publishing incomplete bytes over an existing verified file.
+  fs.closeSync(fs.openSync(partialPath, "wx", 0o600));
+  report(`Downloading ${label}${options.expected ? ` (${formatBytes(options.expected.size)})` : ""}`);
+  const progress = setInterval(() => {
+    const size = fs.statSync(partialPath).size;
+    const seconds = Math.max((Date.now() - started) / 1000, 0.001);
+    report(`${label}: ${formatBytes(size)}${total}, ${formatBytes(size / seconds)}/s, ${Math.round(seconds)}s elapsed`);
+  }, 10000);
+  try {
+    await new Promise((resolve, reject) => {
+      // curl is already an installer dependency and honors standard proxy
+      // environment variables on all supported Node versions. Stream to disk.
+      const child = childProcess.spawn("curl", [
+        "--disable", "--fail", "--location", "--silent", "--show-error",
+        "--proto", "=http,https", "--proto-redir", "=http,https",
+        "--connect-timeout", String(options.connectTimeoutSeconds ?? 15),
+        "--max-time", String(options.timeoutSeconds ?? 1800),
+        "--speed-limit", "1024", "--speed-time", String(options.lowSpeedSeconds ?? 30),
+        "--output", partialPath, "--url", url,
+      ], { stdio: ["ignore", "ignore", "inherit"] });
+      child.once("error", reject);
+      child.once("close", (code, signal) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Download failed for ${label} (curl ${signal ?? code}); check your connection and HTTPS_PROXY/ALL_PROXY settings`));
+      });
+    });
+    if (options.expected) verifyIndexedFile(partialPath, options.expected, label);
+    fs.renameSync(partialPath, destination);
+    report(`Downloaded ${label} (${formatBytes(fs.statSync(destination).size)}, ${((Date.now() - started) / 1000).toFixed(1)}s)`);
+  } finally {
+    clearInterval(progress);
+    fs.rmSync(partialPath, { force: true });
+  }
+}
+
+async function downloadPackage(url, destination, metadata, options = {}) {
+  if (!options.cacheDir) {
+    await download(url, destination, { ...options, expected: metadata });
+    return destination;
+  }
+  const cacheDir = path.resolve(options.cacheDir);
+  fs.mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+  const cachedPath = path.join(cacheDir, `chatgpt-${metadata.sha256}.deb`);
+  let reusable = false;
+  if (fs.existsSync(cachedPath)) {
+    report(`Checking cached ${path.basename(destination)} against signed SHA-256`);
+    try {
+      verifyIndexedFile(cachedPath, metadata, "Cached package");
+      reusable = true;
+    } catch (error) {
+      report(`Cached package rejected: ${error.message}; downloading again`);
+    }
+  }
+  if (!reusable) {
+    await download(url, cachedPath, {
+      ...options, expected: metadata, label: path.basename(destination),
+    });
+  } else {
+    report(`Using verified cached package: ${cachedPath}`);
+  }
+  // Keep each caller's output independent: the updater may move or delete it.
+  const partialPath = `${destination}.${crypto.randomUUID()}.part`;
+  try {
+    fs.copyFileSync(cachedPath, partialPath, fs.constants.COPYFILE_FICLONE);
+    verifyIndexedFile(partialPath, metadata, "Cached package copy");
+    fs.renameSync(partialPath, destination);
+  } finally {
+    fs.rmSync(partialPath, { force: true });
+  }
+  return destination;
 }
 
 function verifySigningKey(keyPath, expectedFingerprint = EXPECTED_FINGERPRINT) {
@@ -178,7 +268,8 @@ async function resolveOfficialPackage(options, expectedFingerprint = EXPECTED_FI
     fs.writeFileSync(keyPath, Buffer.from(keyBase64, "base64"), { mode: 0o600 });
 
     const inReleasePath = path.join(outputDir, "InRelease");
-    await download(`${repository}/dists/stable/InRelease`, inReleasePath);
+    await download(`${repository}/dists/stable/InRelease`, inReleasePath, { timeoutSeconds: 60 });
+    report("Verifying InRelease with the pinned repository key");
     const releasePayload = verifyInRelease(inReleasePath, keyPath, expectedFingerprint);
     const releaseEntries = parseReleaseSha256(releasePayload);
     const packagesRelative = `main/binary-${architecture}/Packages`;
@@ -186,9 +277,11 @@ async function resolveOfficialPackage(options, expectedFingerprint = EXPECTED_FI
     if (!indexedPackages) throw new Error(`Signed InRelease does not index ${packagesRelative}`);
 
     const packagesPath = path.join(outputDir, `Packages.${architecture}`);
-    await download(`${repository}/dists/stable/${packagesRelative}`, packagesPath);
-    verifyIndexedFile(packagesPath, indexedPackages, packagesRelative);
+    await download(`${repository}/dists/stable/${packagesRelative}`, packagesPath, {
+      timeoutSeconds: 60, expected: indexedPackages, label: packagesRelative,
+    });
     metadata = selectChatgptPackage(fs.readFileSync(packagesPath, "utf8"), architecture);
+    report(`Selected signed chatgpt/${architecture} ${metadata.version} (${formatBytes(metadata.size)})`);
   } catch (error) {
     if (localPackagePath == null) throw error;
     throw localPackageVerificationFailure(error,
@@ -198,7 +291,11 @@ async function resolveOfficialPackage(options, expectedFingerprint = EXPECTED_FI
   let packagePath = null;
   if (!options.metadataOnly) {
     packagePath = localPackagePath ?? path.join(outputDir, `chatgpt_${metadata.version}_${architecture}.deb`);
-    if (localPackagePath == null) await download(`${repository}/${metadata.repositoryPath}`, packagePath);
+    if (localPackagePath == null) {
+      await downloadPackage(`${repository}/${metadata.repositoryPath}`, packagePath, metadata, {
+        cacheDir: options.cacheDir,
+      });
+    }
     try {
       verifyIndexedFile(packagePath, metadata, path.basename(packagePath));
       verifyPackageControl(packagePath, metadata);
@@ -236,7 +333,7 @@ async function main() {
     i += 2;
   }
   if (!values["--output-dir"] || !values["--metadata"] || !values["--key-base64"]) {
-    throw new Error("Usage: upstream-linux-package.js --output-dir DIR --metadata FILE --key-base64 FILE [--arch ARCH] [--repository URL] [--metadata-only | --local-package FILE]");
+    throw new Error("Usage: upstream-linux-package.js --output-dir DIR --metadata FILE --key-base64 FILE [--arch ARCH] [--repository URL] [--cache-dir DIR] [--metadata-only | --local-package FILE]");
   }
   const result = await resolveOfficialPackage({
     outputDir: values["--output-dir"],
@@ -244,6 +341,7 @@ async function main() {
     keyBase64Path: values["--key-base64"],
     architecture: values["--arch"] ?? os.arch(),
     repository: values["--repository"],
+    cacheDir: values["--cache-dir"],
     metadataOnly,
     localPackagePath: values["--local-package"],
   });
@@ -259,6 +357,8 @@ if (require.main === module) {
 
 module.exports = {
   EXPECTED_FINGERPRINT,
+  download,
+  downloadPackage,
   extractClearSignedPayload,
   mapMachineArch,
   parseDeb822,

@@ -41,6 +41,28 @@ function createSigningFixture(root, identity) {
   return { fingerprint, home, keyPath };
 }
 
+async function serveRepository(t, handler) {
+  const server = http.createServer(handler);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  });
+  return `http://127.0.0.1:${server.address().port}`;
+}
+
+function bypassLocalProxy(t) {
+  for (const name of ["NO_PROXY", "no_proxy"]) {
+    const previous = process.env[name];
+    process.env[name] = "127.0.0.1,localhost";
+    t.after(() => {
+      if (previous === undefined) delete process.env[name];
+      else process.env[name] = previous;
+    });
+  }
+}
+
 test("architecture mapping supports only official architectures", () => {
   assert.equal(mapMachineArch("x86_64"), "amd64");
   assert.equal(mapMachineArch("aarch64"), "arm64");
@@ -109,6 +131,7 @@ test("InRelease verification accepts the signing key and rejects tampering or a 
 });
 
 test("signed resolution verifies local packages without downloading their bodies and fails closed", { timeout: 30000 }, async (t) => {
+  bypassLocalProxy(t);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-local-signed-package-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const signer = createSigningFixture(root, "Local Package Signer");
@@ -131,9 +154,25 @@ test("signed resolution verifies local packages without downloading their bodies
     { name: "wrong control architecture", controlArchitecture: "arm64", mismatch: true, error: /Package Architecture mismatch/ },
     { name: "missing index architecture", missingArchitecture: true, error: /does not index/ },
     { name: "unsupported architecture", architecture: "armv7l", error: /Unsupported architecture/ },
-    { name: "unavailable signed index", unavailable: true, error: /Download failed \(503\)/ },
-    { name: "index network failure", networkFailure: true, error: /fixture network failure/ },
+    { name: "unavailable signed index", unavailable: true, error: /Download failed for InRelease \(curl 22\)/ },
+    { name: "index network failure", networkFailure: true, error: /Download failed for InRelease \(curl \d+\)/ },
     { name: "remote package hash mismatch", download: true, tamperDownload: true, error: /SHA256 mismatch/ },
+    { name: "reused cache still verifies fresh signed metadata", download: true, cache: true, attempts: 2 },
+    { name: "cached body cannot bypass a tampered signature", download: true, cache: true, preseedCache: true,
+      tamperSignature: true, error: /signature verification failed/ },
+    { name: "cached body cannot bypass an unsigned index", download: true, cache: true, preseedCache: true,
+      unsigned: true, error: /signature verification failed/ },
+    { name: "cached body cannot bypass an index hash mismatch", download: true, cache: true, preseedCache: true,
+      tamperIndex: true, error: /Packages.*SHA256 mismatch/ },
+    { name: "local package remains explicit when a cache exists", cache: true, preseedCache: true },
+    { name: "cached official bytes cannot replace a mismatching local package", cache: true, preseedCache: true,
+      tamperPackage: true, mismatch: true, error: /SHA256 mismatch/ },
+    { name: "downloaded and cached control package mismatch", download: true, cache: true, attempts: 2,
+      packageName: "other", error: /Package Package mismatch/ },
+    { name: "downloaded and cached control version mismatch", download: true, cache: true, attempts: 2,
+      version: "26.1020.1", error: /Package Version mismatch/ },
+    { name: "downloaded and cached control architecture mismatch", download: true, cache: true, attempts: 2,
+      controlArchitecture: "arm64", error: /Package Architecture mismatch/ },
   ];
   for (const scenario of cases) {
     await t.test(scenario.name, async (t) => {
@@ -145,11 +184,12 @@ test("signed resolution verifies local packages without downloading their bodies
         architecture: scenario.controlArchitecture ?? architecture,
       });
       const body = fs.readFileSync(file);
+      const packageSha256 = sha256File(file);
       const packageRelative = "pool/main/c/chatgpt/input.deb";
       const packagesRelative = `main/binary-${architecture}/Packages`;
       const packages = Buffer.from([
         "Package: chatgpt", "Version: 26.1021.22027", `Architecture: ${architecture}`,
-        `Filename: ${packageRelative}`, `Size: ${body.length}`, `SHA256: ${sha256File(file)}`, "",
+        `Filename: ${packageRelative}`, `Size: ${body.length}`, `SHA256: ${packageSha256}`, "",
       ].join("\n"));
       const packagesPath = path.join(current, "Packages");
       fs.writeFileSync(packagesPath, packages);
@@ -171,59 +211,84 @@ test("signed resolution verifies local packages without downloading their bodies
       if (scenario.tamperSize) fs.appendFileSync(file, "extra");
       const fixtureKey = scenario.wrongKey ? path.join(current, "wrong.base64") : keyBase64Path;
       if (scenario.wrongKey) fs.writeFileSync(fixtureKey, fs.readFileSync(wrong.keyPath).toString("base64"));
+      const cacheDir = path.join(current, "cache");
+      const cachedPath = path.join(cacheDir, `chatgpt-${packageSha256}.deb`);
+      if (scenario.preseedCache) {
+        fs.mkdirSync(cacheDir);
+        fs.writeFileSync(cachedPath, body);
+      }
       const requested = [];
-      const repository = "https://fixture.invalid";
-      t.mock.method(globalThis, "fetch", async (url) => {
+      const repository = await serveRepository(t, (request, response) => {
+        const url = request.url;
         requested.push(url);
-        if (scenario.unavailable) return new Response("unavailable", { status: 503 });
-        if (scenario.networkFailure) throw new TypeError("fixture network failure");
-        if (url === `${repository}/dists/stable/InRelease`) return new Response(inRelease);
-        if (url === `${repository}/dists/stable/${packagesRelative}`) {
-          return new Response(scenario.tamperIndex ? packages.toString().replace("26.1021", "26.1022") : packages);
+        if (scenario.unavailable) {
+          response.writeHead(503);
+          return response.end("unavailable");
         }
-        if (url === `${repository}/${packageRelative}`) {
+        if (scenario.networkFailure) return response.destroy();
+        if (url === "/dists/stable/InRelease") return response.end(inRelease);
+        if (url === `/dists/stable/${packagesRelative}`) {
+          return response.end(scenario.tamperIndex ? packages.toString().replace("26.1021", "26.1022") : packages);
+        }
+        if (url === `/${packageRelative}`) {
           if (scenario.tamperDownload) {
             const changed = Buffer.from(body); changed[changed.length - 1] ^= 1;
-            return new Response(changed);
+            return response.end(changed);
           }
-          return new Response(body);
+          return response.end(body);
         }
-        throw Error(`Unexpected request: ${url}`);
+        response.writeHead(404);
+        response.end(`Unexpected request: ${url}`);
       });
-      const options = {
-        architecture, repository, keyBase64Path: fixtureKey,
-        outputDir: path.join(current, "verified"), metadataPath: path.join(current, "metadata.json"),
-        ...(scenario.download ? {} : { localPackagePath: file }),
-      };
-      if (scenario.error) {
-        await assert.rejects(resolveOfficialPackage(options, signer.fingerprint), (error) => {
-          assert.match(error.message, scenario.error);
-          if (scenario.download || architecture === "armv7l") {
-            assert.doesNotMatch(error.message, /--skip-oai-official-sig-verification/);
+      const attempts = scenario.attempts ?? 1;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const options = {
+          architecture, repository, keyBase64Path: fixtureKey,
+          outputDir: path.join(current, `verified-${attempt}`), metadataPath: path.join(current, `metadata-${attempt}.json`),
+          ...(scenario.download ? {} : { localPackagePath: file }),
+          ...(scenario.cache ? { cacheDir } : {}),
+        };
+        if (scenario.error) {
+          await assert.rejects(resolveOfficialPackage(options, signer.fingerprint), (error) => {
+            assert.match(error.message, scenario.error);
+            if (scenario.download || architecture === "armv7l") {
+              assert.doesNotMatch(error.message, /--skip-oai-official-sig-verification/);
+            } else {
+              assert.match(error.message, scenario.mismatch
+                ? /Local package does not match the current signed stable release/
+                : /Could not fetch or verify the signed stable index/);
+              assert.match(error.message, /intentional unverified local build/);
+              assert.match(error.message, /--skip-oai-official-sig-verification/);
+              assert.ok(error.cause instanceof Error);
+              assert.match(error.cause.message, scenario.error);
+            }
+            return true;
+          });
+          assert.equal(fs.existsSync(options.metadataPath), false);
+        } else {
+          const result = await resolveOfficialPackage(options, signer.fingerprint);
+          assert.equal(result.signatureVerification, "verified");
+          assert.equal(result.version, "26.1021.22027");
+          assert.equal(result.architecture, architecture);
+          assert.equal(result.sha256, sha256File(file));
+          assert.deepEqual(fs.readFileSync(result.path), body);
+          if (!scenario.download) {
+            assert.equal(result.path, file);
+            assert.equal(result.explicitlyProvided, true);
           } else {
-            assert.match(error.message, scenario.mismatch
-              ? /Local package does not match the current signed stable release/
-              : /Could not fetch or verify the signed stable index/);
-            assert.match(error.message, /intentional unverified local build/);
-            assert.match(error.message, /--skip-oai-official-sig-verification/);
-            assert.ok(error.cause instanceof Error);
-            assert.match(error.cause.message, scenario.error);
+            assert.equal(result.explicitlyProvided, undefined);
           }
-          return true;
-        });
-        assert.equal(fs.existsSync(options.metadataPath), false);
-      } else {
-        const result = await resolveOfficialPackage(options, signer.fingerprint);
-        assert.equal(result.signatureVerification, "verified");
-        assert.equal(result.version, "26.1021.22027");
-        assert.equal(result.architecture, architecture);
-        assert.equal(result.sha256, sha256File(file));
-        if (!scenario.download) {
-          assert.equal(result.path, file);
-          assert.equal(result.explicitlyProvided, true);
         }
       }
-      assert.equal(requested.some(url => url.includes("/pool/")), scenario.download === true);
+      const failsBeforePackages = scenario.tamperSignature || scenario.wrongSigner || scenario.wrongKey
+        || scenario.unsigned || scenario.missingArchitecture || scenario.unavailable || scenario.networkFailure;
+      assert.equal(requested.filter(url => url === "/dists/stable/InRelease").length,
+        architecture === "armv7l" ? 0 : attempts);
+      assert.equal(requested.filter(url => url === `/dists/stable/${packagesRelative}`).length,
+        architecture === "armv7l" || failsBeforePackages ? 0 : attempts);
+      assert.equal(requested.filter(url => url === `/${packageRelative}`).length,
+        !scenario.download || scenario.preseedCache ? 0 : scenario.cache ? 1 : attempts);
+      if (scenario.cache) assert.deepEqual(fs.readFileSync(cachedPath), body);
     });
   }
 });
@@ -233,21 +298,21 @@ test("local-package CLI explains unavailable signed metadata and the explicit un
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const file = makeDeb(path.join(root, "package"));
   const requested = [];
-  const server = http.createServer((request, response) => {
+  const repository = await serveRepository(t, (request, response) => {
     requested.push(request.url);
     response.writeHead(503); response.end("fixture index unavailable");
   });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  t.after(() => new Promise(resolve => server.close(resolve)));
   const metadataPath = path.join(root, "metadata.json");
   const child = childProcess.spawn(process.execPath, [
     path.join(__dirname, "upstream-linux-package.js"),
     "--output-dir", path.join(root, "verified"), "--metadata", metadataPath,
     "--key-base64", path.resolve(__dirname, "../../assets/openai-codex-linux-repository-key.gpg.base64"),
-    "--arch", "amd64", "--repository", `http://127.0.0.1:${server.address().port}`,
+    "--arch", "amd64", "--repository", repository,
     "--local-package", file,
-  ], { stdio: ["ignore", "pipe", "pipe"] });
+  ], {
+    env: { ...process.env, NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let stdout = "", stderr = "";
   child.stdout.setEncoding("utf8").on("data", data => { stdout += data; });
   child.stderr.setEncoding("utf8").on("data", data => { stderr += data; });
@@ -255,7 +320,8 @@ test("local-package CLI explains unavailable signed metadata and the explicit un
   assert.equal(status, 1);
   assert.equal(stdout, "");
   assert.match(stderr, /Could not fetch or verify the signed stable index/);
-  assert.match(stderr, /Download failed \(503\)/);
+  assert.match(stderr, /Download failed for InRelease \(curl 22\)/);
+  assert.match(stderr, /503/);
   assert.match(stderr, /--skip-oai-official-sig-verification/);
   assert.match(stderr, /intentional unverified local build/);
   assert.deepEqual(requested, ["/dists/stable/InRelease"]);

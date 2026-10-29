@@ -76,6 +76,11 @@ Environment variables:
   UPSTREAM_DEB        Equivalent to the optional positional .deb path
   CODEX_UPSTREAM_LINUX_REPOSITORY
                       Override the official repository URL for fixture testing
+  CODEX_UPSTREAM_CACHE_DIR
+                      Override verified package cache (default:
+                      ${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop/upstream)
+  HTTPS_PROXY, ALL_PROXY, NO_PROXY
+                      Standard curl proxy settings for upstream downloads
   REBUILD_REPORT_DIR  Default report directory for --inspect and rebuild reports
   CODEX_ACCEPTANCE_OVERRIDE=1
                       Developer-only promotion override for a completely built

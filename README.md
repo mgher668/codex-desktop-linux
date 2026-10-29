@@ -78,6 +78,8 @@ The recommended native installation is:
 make bootstrap-native
 ```
 
+For payload extraction, `install.sh` automatically uses `${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop-dev/tmp` and cleans its work directory on exit. A valid absolute `TMPDIR` overrides this default; relative paths or paths containing a colon fall back to the cache directory. Before running `make` or packaging scripts directly, create that directory and export `TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop-dev/tmp"` in the calling shell so packaging also uses disk-backed temporary storage.
+
 This installs build dependencies, resolves the current package through
 OpenAI's signed stable APT metadata, builds `codex-app/`, creates the native
 package for the detected distribution, and installs the newest artifact from
@@ -119,6 +121,27 @@ make install-native
 `make setup-native` only writes the local feature selection. It does not build
 or install the application. See [Native setup](docs/native-setup.md) for the
 guided flow, non-interactive settings, updater selection, and cleanup.
+
+### Download progress and repeated installs
+
+The `Resolving official chatgpt/...` step includes fetching signed metadata and
+downloading the complete official `.deb`. The installer reports each stage and
+download progress every 10 seconds. Downloads use curl and respect
+`HTTPS_PROXY`, `ALL_PROXY`, and `NO_PROXY`. Connections time out after 15 seconds;
+stalled transfers after 30 seconds. Each metadata download is limited to
+60 seconds and the package download to 30 minutes.
+
+Verified packages are cached in
+`${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop/upstream`. Set
+`CODEX_UPSTREAM_CACHE_DIR` to use another directory. Each build still fetches and
+verifies fresh signed `InRelease` and `Packages` metadata, then checks a cached
+package's size and SHA-256 before reuse. A changed package or corrupt cache is
+downloaded again.
+
+Skipping already installed dependencies does not skip rebuilding the app and
+native package. `make install-native` skips the dependency setup step only. To
+reinstall the latest package already generated in `dist/`, use `make install`;
+that command does not include subsequent source changes.
 
 ### Use an already downloaded official package
 

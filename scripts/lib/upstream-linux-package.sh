@@ -37,6 +37,7 @@ resolve_upstream_linux_package() {
             --metadata "$metadata_path" \
             --key-base64 "$SCRIPT_DIR/assets/openai-codex-linux-repository-key.gpg.base64" \
             --arch "$architecture" \
+            --cache-dir "${CODEX_UPSTREAM_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop/upstream}" \
             --repository "${CODEX_UPSTREAM_LINUX_REPOSITORY:-https://persistent.oaistatic.com/codex-app-prod/linux/deb}" \
             "${verifier_args[@]}"
     )"
